@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -34,40 +35,45 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.andaxin.app.LocalAppGraph
+import com.andaxin.core.concurrency.todayDayOfWeek
 import com.andaxin.core.design.Gap
 import com.andaxin.core.design.LocalInk
-import com.andaxin.core.design.Palette
 import com.andaxin.core.design.Radius
 import com.andaxin.core.design.Type
-import com.andaxin.core.schedule.Periods
+import com.andaxin.core.schedule.LessonPeriods
 import com.andaxin.core.schedule.shortRoom
 import com.andaxin.data.TimetableSlot
 import com.andaxin.shell.Chip
-import com.andaxin.shell.Hairline
-import com.andaxin.shell.RowLine
-import com.andaxin.shell.Refreshable
-import com.andaxin.shell.Sheet
-import com.andaxin.shell.enterFade
-import com.andaxin.shell.pressClick
-import com.andaxin.shell.adxViewModel
 import com.andaxin.shell.ErrorLine
+import com.andaxin.shell.Hairline
+import com.andaxin.shell.Refreshable
+import com.andaxin.shell.RowLine
+import com.andaxin.shell.Sheet
 import com.andaxin.shell.ShelfTail
+import com.andaxin.shell.pressClick
 import com.andaxin.state.TimetableModel
 import kotlinx.coroutines.delay
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
+
+/*
+ * 平移注：从 app 的 `feature/schedule/TimetableScreen.kt` 搬进共享层（底栏五格那批）。
+ * 屏组件改成依赖注入（TimetableDeps：宿主建好 Model 递进来）；钟点全部从
+ * `LessonPeriods`（app 侧 Periods 的 common 影子）那张官方作息表查；
+ * `Periods.today()` → `todayDayOfWeek()`，周头日期 `SimpleDateFormat("M/d")` +
+ * Date 毫秒算术 → kotlinx-datetime 的 LocalDate（同口径 "M/d"，本机时区）。
+ */
 
 private val DAYS = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
-/** 每节课的起止时刻。表在 `Periods` 里，和首页"下一节"共用一份。 */
-private val PERIOD_TIMES = Periods.START_AT
+/** 每节课的起止时刻。表在 `LessonPeriods` 里，和首页"下一节"共用一份。 */
+private val PERIOD_TIMES = LessonPeriods.START_AT
 
 /**
  * 一行多高。58 → 44：11 节课原来 638dp，一屏装不下必须滚，
@@ -104,11 +110,14 @@ private fun rowHeightFor(viewport: Dp, extraChrome: Dp = 0.dp): Dp {
     return (gridRoom / PERIOD_TIMES.size.toFloat()).coerceIn(ROW_HEIGHT.dp, 66.dp)
 }
 
+/** 课表那一格要接的：Model 由宿主建好递进来。 */
+class TimetableDeps(
+    val model: TimetableModel,
+)
+
 @Composable
-fun TimetableScreen(modifier: Modifier = Modifier) {
-    val graph = LocalAppGraph.current
-    val model = adxViewModel { TimetableModel(it.timetable) }
-    val state by model.state.collectAsStateWithLifecycle()
+fun TimetableScreen(deps: TimetableDeps, modifier: Modifier = Modifier) {
+    val state by deps.model.state.collectAsState()
     val ink = LocalInk.current
 
     /*
@@ -123,12 +132,12 @@ fun TimetableScreen(modifier: Modifier = Modifier) {
             minute++
         }
     }
-    val today = remember(minute) { Periods.today() }
-    val periodNow = remember(minute) { Periods.periodNow() }
+    val today = remember(minute) { todayDayOfWeek() }
+    val periodNow = remember(minute) { LessonPeriods.periodNow() }
     var showDayMode by remember { mutableStateOf(false) }
 
     // 这一屏也支持下拉：整周没拿到时，下面会给一条「重试」，但用户更习惯直接拽一下
-    Refreshable({ model.refresh() }, modifier.fillMaxSize()) {
+    Refreshable({ deps.model.refresh() }, modifier.fillMaxSize()) {
         /*
          * 要一层 `BoxWithConstraints` 只是为了拿到"这一屏有多高"：格子铺不满时把行高拉开，
          * 别在 19:55 那一行底下留一条白。里面的 Column 照样滚动 —— 行高只在"能放下"的时候变大，
@@ -162,14 +171,14 @@ fun TimetableScreen(modifier: Modifier = Modifier) {
             val shownWeek = if (state.now == 0) 0 else state.now + state.weekOffset
             if (state.weeks.isEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Gap.sm)) {
-                    Chip("本周", state.weekOffset == 0) { model.load(0) }
-                    Chip("下周", state.weekOffset == 1) { model.load(1) }
+                    Chip("本周", state.weekOffset == 0) { deps.model.load(0) }
+                    Chip("下周", state.weekOffset == 1) { deps.model.load(1) }
                 }
             } else {
                 val weekList = rememberLazyListState()
                 LazyRow(state = weekList, horizontalArrangement = Arrangement.spacedBy(Gap.sm)) {
                     items(state.weeks, key = { it }) { w ->
-                        Chip(cnWeek(w), w == shownWeek) { model.load(w - state.now) }
+                        Chip(cnWeek(w), w == shownWeek) { deps.model.load(w - state.now) }
                     }
                 }
                 LaunchedEffect(state.weeks, state.now) {
@@ -207,7 +216,7 @@ fun TimetableScreen(modifier: Modifier = Modifier) {
 
             // 原来这里连着摆两遍同一个原因（一行灰字 + 一条 ErrorLine），只留带「重试」的那条
             Spacer(Modifier.height(Gap.lg))
-            state.error?.let { ErrorLine(it, retry = { model.load(state.weekOffset) }) }
+            state.error?.let { ErrorLine(it, retry = { deps.model.load(state.weekOffset) }) }
             ShelfTail()
         }
         }
@@ -267,8 +276,7 @@ private fun Grid(slots: List<TimetableSlot>, today: Int, periodNow: Int?, rowH: 
     val ink = LocalInk.current
     val accent = MaterialTheme.colorScheme.primary
     // 表头第二行那个日期：这一周的周一 + (day-1)。官方那一版就是"周一 / 10-19"两行。
-    val monday = remember(weekOffset) { Periods.weekMonday(offset = weekOffset).timeInMillis }
-    val dayFmt = remember { java.text.SimpleDateFormat("M/d", java.util.Locale.US) }
+    val monday = remember(weekOffset) { LessonPeriods.weekMonday(offset = weekOffset) }
     val colors = remember(slots) { coursePalette(slots) }
 
     val byDay = remember(slots) {
@@ -303,7 +311,7 @@ private fun Grid(slots: List<TimetableSlot>, today: Int, periodNow: Int?, rowH: 
                         val on = periodNow == i + 1
                         Text("${i + 1}", fontSize = Type.micro, color = if (on) accent else ink.faint)
                         Text(start, fontSize = Type.tinier, color = ink.ghost)
-                        Periods.endAt(i + 1)?.let { end ->
+                        LessonPeriods.endAt(i + 1)?.let { end ->
                             Text(end, fontSize = Type.tinier, color = ink.ghost)
                         }
                     }
@@ -330,9 +338,11 @@ private fun Grid(slots: List<TimetableSlot>, today: Int, periodNow: Int?, rowH: 
                         fontWeight = if (isToday) FontWeight.Medium else FontWeight.Normal,
                         color = if (isToday) accent else ink.muted,
                     )
-                    // 日期是这一周的，不是今天的 —— 翻到下周时它会跟着走
+                    // 日期是这一周的，不是今天的 —— 翻到下周时它会跟着走。
+                    // 对齐 `SimpleDateFormat("M/d")`：没有补零，10 月就是 "10/19"，10 号以下是 "9/5"。
+                    val date = monday.plus(day - 1, DateTimeUnit.DAY)
                     Text(
-                        text = dayFmt.format(java.util.Date(monday + (day - 1) * 86_400_000L)),
+                        text = "${date.month.ordinal + 1}/${date.day}",
                         fontSize = Type.tinier,
                         color = if (isToday) accent.copy(alpha = 0.8f) else ink.faint,
                     )
@@ -486,7 +496,7 @@ private fun DayList(slots: List<TimetableSlot>, today: Int, runs: List<Timetable
                 sub = listOf(
                     // 这一屏原来只有"第 1-2 节"，没有钟点；时间放最前面，扫一眼就是几点到几点。
                     // 右边那句已经写了"第 1-2 节"，所以这里不再重复"N 节连排"。
-                    Periods.rangeText(slot.startPeriod, slot.periodCount).orEmpty(),
+                    LessonPeriods.rangeText(slot.startPeriod, slot.periodCount).orEmpty(),
                     shortRoom(slot.room),
                 ).filter { it.isNotBlank() }.joinToString(" · "),
                 right = if (slot.periodCount > 1)

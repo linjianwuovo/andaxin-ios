@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,33 +30,55 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.andaxin.shell.Refreshable
-import com.andaxin.shell.pressClick
-import com.andaxin.app.LocalAppGraph
+import com.andaxin.core.concurrency.clockText
 import com.andaxin.core.design.Gap
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Rhythm
 import com.andaxin.core.design.Type
 import com.andaxin.data.MessageItem
-import com.andaxin.shell.Hairline
-import com.andaxin.shell.Sheet
-import com.andaxin.shell.adxViewModel
 import com.andaxin.shell.ErrorLine
+import com.andaxin.shell.Hairline
+import com.andaxin.shell.Refreshable
+import com.andaxin.shell.Sheet
 import com.andaxin.shell.ShelfTail
+import com.andaxin.shell.pressClick
 import com.andaxin.state.MessageModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+/*
+ * 平移注：从 app 的 `feature/message/MessageScreen.kt` 搬进共享层（底栏五格那批）。
+ * 屏组件改成依赖注入：Model 由宿主建好递进来（android 侧还是 adxViewModel 那条路，
+ * iOS 壳自己管生命周期），轮询器那两路也明着给 —— `Poller` 是 app 侧的类，
+ * 共享层认不得，只认它手上那两个 StateFlow（iOS 总装给原生轮询的同形 Flow 就行）。
+ * `collectAsStateWithLifecycle` 在共享层没有 lifecycle-compose，换成 compose 自己的
+ * `collectAsState` —— 屏幕内容一致，只是少了"后台不重组"那一层优化。
+ */
+
+/**
+ * 消息屏要接的三路。
+ *
+ * [model]：共享层自己的 `MessageModel`（state/Models.kt），宿主负责建和活；
+ * [lastRunAt]/[busy]：app 侧消息轮询器（`Poller`）手上的两个口 —— 顶上那行
+ * "上次刷新：HH:mm，每 5 分钟一次"要说的是它。默认值 = 这一端还没接轮询，
+ * 界面就永远写"还没轮询过"，不编一个假时刻。
+ */
+class MessageDeps(
+    val model: MessageModel,
+    val lastRunAt: StateFlow<Long> = MutableStateFlow(0L),
+    val busy: StateFlow<Boolean> = MutableStateFlow(false),
+)
 
 @Composable
-fun MessageScreen(modifier: Modifier = Modifier) {
-    val graph = LocalAppGraph.current
-    val model = adxViewModel { MessageModel(it.messages) }
-    val state by model.state.collectAsStateWithLifecycle()
+fun MessageScreen(deps: MessageDeps, modifier: Modifier = Modifier) {
+    val state by deps.model.state.collectAsState()
+    val lastRun by deps.lastRunAt.collectAsState()
+    val busy by deps.busy.collectAsState()
     // 第一下按下去只是把这一行 arm 起来，第二次才真发 `readPushMessage.do`
     var armedRead by remember { mutableStateOf<String?>(null) }
 
     // 下拉一次重拉这一屏：新消息不用杀进程重开才看得见
-    Refreshable({ model.refresh() }, modifier.fillMaxSize()) {
+    Refreshable({ deps.model.refresh() }, modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -86,7 +109,7 @@ fun MessageScreen(modifier: Modifier = Modifier) {
                             if (!item.unread) return@MessageRow
                             if (armedRead == item.id) {
                                 armedRead = null
-                                model.markRead(item.id)
+                                deps.model.markRead(item.id)
                             } else {
                                 armedRead = item.id
                             }
@@ -107,14 +130,13 @@ fun MessageScreen(modifier: Modifier = Modifier) {
             }
 
             Spacer(Modifier.height(Gap.lg))
-            val lastRun by graph.poller.lastRunAt.collectAsStateWithLifecycle(0L)
-            val busy by graph.poller.busy.collectAsStateWithLifecycle(false)
             Text(
                 text = when {
                     busy -> "正在拉新消息…"
                     lastRun == 0L -> "还没轮询过"
-                    else -> "上次刷新：" + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
-                        .format(java.util.Date(lastRun)) + "，每 5 分钟一次"
+                    // 对齐 `SimpleDateFormat("HH:mm").format(Date(lastRun))`：clockText 是
+                    // "yyyy-MM-dd HH:mm:ss"，第 11..16 位就是钟点（本机时区，同一口径）。
+                    else -> "上次刷新：" + clockText(lastRun).substring(11, 16) + "，每 5 分钟一次"
                 },
                 fontSize = Type.micro,
                 color = LocalInk.current.faint,

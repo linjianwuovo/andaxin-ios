@@ -1,7 +1,5 @@
 package com.andaxin.feature.home
 
-import android.net.Uri
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -32,48 +30,51 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.andaxin.R
-import com.andaxin.app.LocalAppGraph
+import com.andaxin.core.concurrency.clockText
+import com.andaxin.core.concurrency.currentHour
+import com.andaxin.core.concurrency.nowMillis
 import com.andaxin.core.design.Gap
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Palette
-import com.andaxin.core.design.Radius
 import com.andaxin.core.design.Rhythm
 import com.andaxin.core.design.Type
-import com.andaxin.data.capture.HomeExtras
-import com.andaxin.core.net.RemoteImage
-import com.andaxin.core.schedule.Periods
-import com.andaxin.core.settings.Appearance
-import com.andaxin.core.settings.HeroStyle
+import com.andaxin.core.schedule.LessonPeriods
 import com.andaxin.core.schedule.shortRoom
+import com.andaxin.core.store.Session
+import com.andaxin.core.store.SessionStore
+import com.andaxin.core.text.fixed
 import com.andaxin.data.TimetableSlot
-import com.andaxin.data.capture.SchoolService
+import com.andaxin.data.brief.ListSource
+import com.andaxin.data.capture.HomeExtras
 import com.andaxin.shell.Chip
+import com.andaxin.shell.ErrorLine
 import com.andaxin.shell.Hairline
-import com.andaxin.shell.LoadWhy
 import com.andaxin.shell.MetricCell
+import com.andaxin.shell.Refreshable
 import com.andaxin.shell.RowLine
 import com.andaxin.shell.SampleTag
-import com.andaxin.shell.Refreshable
 import com.andaxin.shell.Sheet
 import com.andaxin.shell.ShelfTail
 import com.andaxin.shell.enterFade
 import com.andaxin.shell.pressClick
-import com.andaxin.shell.adxViewModel
+import com.andaxin.state.HomeModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import com.andaxin.shell.ErrorLine
-import com.andaxin.state.HomeModel
+import kotlinx.coroutines.flow.StateFlow
+
+/*
+ * 平移注：从 app 的 `feature/home/HomeScreen.kt` 搬进共享层（底栏五格那批，依赖最多的一格）。
+ * 屏组件改成依赖注入：仪表 Model/会话/校历那发/待办四栏的列表口全是共享层类型；
+ * R.drawable 的三张 hero 壁纸抽成 `heroArt` 宿主槽（没给就画一块纯渐变占位），
+ * 「设置 → 主题」那一档抽成共享枚举 `HeroLook`（口径对齐 app 侧 settings.HeroStyle）；
+ * 路由字符串内联（和 app 侧 `shell/Route` 那几个常量一字不差，iOS 壳按同样的串分发）；
+ * `SimpleDateFormat("MM-dd")` → clockText 的 "MM-dd" 段，`"%.2f".format` → fixed()，
+ * `Calendar.HOUR_OF_DAY` → currentHour()。四个 tab 之外这一格依赖最多，所以放最后。
+ */
 
 /*
  * 首页。10-20 晚重排过一次，方向是"少一点、密一点"：
@@ -87,11 +88,34 @@ import com.andaxin.state.HomeModel
  * ④ 底部那几段取证说明全部拿掉了 —— 界面只留一句状态，那些话在 docs/接入清单.md。
  */
 
+/** 首页壁纸跟「设置 → 主题」的哪一档走。口径对齐 app 侧 `settings.HeroStyle`。 */
+enum class HeroLook { Auto, Dawn, Dusk, Night }
+
+/** 壁纸具体哪一张：早上晨雾、下午金树、夜里月亮。 */
+enum class HeroArt { Dawn, Dusk, Night }
+
+/**
+ * 首页这一格要接的。
+ *
+ * [todoFeeds] 四发**并着发、一起出现**（他定过一条：多数据源那一屏不许一路加载一路蹦），
+ * 哪一发挂了那一格就摆「—」而不是 0 —— 没拿到和没有是两件事。
+ */
+class HomeDeps(
+    val model: HomeModel,
+    val session: SessionStore,
+    /** 壁纸跟「设置 → 主题」里选的那一档走：自动/晨雾/金树/月夜。 */
+    val heroStyle: StateFlow<HeroLook>,
+    /** 壁纸那一张怎么画（android = res/drawable-nodpi 的 hero_*）。null = 画纯渐变占位。 */
+    val heroArt: (@Composable (art: HeroArt) -> Unit)? = null,
+    /** 校历那一发（app = CaptureHome.load()，屏幕上只用 calendar 那一行）。 */
+    val loadExtras: suspend () -> Result<HomeExtras>,
+    /** 「待办事务」四个数各走各的列表口（app = affairList/toReadList/myAffairList/handledList）。 */
+    val todoFeeds: List<ListSource>,
+)
+
 @Composable
-fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
-    val graph = LocalAppGraph.current
-    val model = adxViewModel { HomeModel(it.dashboard, it.timetable) }
-    val state by model.state.collectAsStateWithLifecycle()
+fun HomeScreen(deps: HomeDeps, open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
+    val state by deps.model.state.collectAsState()
     val ink = LocalInk.current
     /*
      * 首页下半屏那些东西（服务清单、轮播图、联系方式、校历）是另外四条接口，
@@ -101,11 +125,11 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
      * 撞在一起，三条拿着旧票先发了出去，屏幕上就写着「轮播图没拉到：登录已在别处被顶掉」，
      * 而同一屏的校历是真数据 —— 看着像只接好了一半。换票之后重拉一次。
      */
-    val session by graph.session.state.collectAsStateWithLifecycle(com.andaxin.core.store.Session())
-    // 首页壁纸跟着「设置 → 主题」里选的那一档走：自动/晨雾/金树/月夜
-    val look by graph.appearance.state.collectAsStateWithLifecycle(initialValue = Appearance())
+    val session by deps.session.state.collectAsState(Session())
+    // 壁纸跟着「设置 → 主题」里选的那一档走：自动/晨雾/金树/月夜
+    val look by deps.heroStyle.collectAsState()
     /*
-     * 首页下半屏那一栏的数据。以前这里挂的是 `graph.home.load()` 那一发（服务清单 / 轮播图 /
+     * 首页下半屏那一栏的数据。以前这里挂的是 `home.load()` 那一发（服务清单 / 轮播图 /
      * 联系方式 / 校历），屏上最后只剩「求助电话」一组号码 —— 10-23 深夜他说"删了换成待办"，
      * 所以这一栏改成数今天该办的事；那条接口还在数据层里，只是不再上屏。
      *
@@ -116,7 +140,7 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     // 同一发里的联系方式（求助电话）10-23 深夜起不再上屏了。
     var extras by remember { mutableStateOf<HomeExtras?>(null) }
     LaunchedEffect(session.generation) {
-        runCatching { graph.home.load() }.getOrNull()?.onSuccess { extras = it }
+        runCatching { deps.loadExtras() }.getOrNull()?.onSuccess { extras = it }
     }
 
     /*
@@ -127,9 +151,6 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
      * `flowRuTask/getYwdtCount.do` 那四个 redDot —— 那条口 10-20 现打定死不能用
      * （零业务参数、`approvedType` 收了完全忽略、六次响应逐字节相同，而同一把会话下
      * 列表口回 21 条时它四个数全 0）。所以我们不拿它当权威，谁那一栏就用谁那条列表口的条数。
-     *
-     * 四发**并着发、一起出现**（他定过一条：多数据源那一屏不许一路加载一路蹦），
-     * 哪一发挂了那一格就摆「—」而不是 0 —— 没拿到和没有是两件事。
      */
     val todoTabs = listOf("待办", "待阅", "我的申请", "已办")
     var todoCounts by remember { mutableStateOf<List<String>?>(null) }
@@ -138,9 +159,8 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     LaunchedEffect(session.generation, todoTry) {
         todoCounts = null
         todoWhy = null
-        val feeds = listOf(graph.affairList, graph.toReadList, graph.myAffairList, graph.handledList)
         val got: List<Result<List<com.andaxin.data.brief.BriefRow>>> = coroutineScope {
-            feeds.map { f -> async { runCatching { f.rows() }.getOrElse { Result.failure(it) } } }
+            deps.todoFeeds.map { f -> async { runCatching { f.rows() }.getOrElse { Result.failure(it) } } }
                 .map { it.await() }
         }
         todoCounts = got.map { r -> r.getOrNull()?.size?.toString() ?: "—" }
@@ -165,23 +185,23 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
             clock++
         }
     }
-    val nowMin = remember(clock) { Periods.minuteOfDay() }
+    val nowMin = remember(clock) { com.andaxin.core.concurrency.minuteOfDay() }
     val upcoming = remember(state.today, nowMin) {
         state.today
             .filter { slot ->
-                val end = Periods.endMinute(slot.startPeriod + slot.periodCount - 1) ?: return@filter false
+                val end = LessonPeriods.endMinute(slot.startPeriod + slot.periodCount - 1) ?: return@filter false
                 end > nowMin
             }
-            .minByOrNull { Periods.startMinute(it.startPeriod) ?: Int.MAX_VALUE }
+            .minByOrNull { LessonPeriods.startMinute(it.startPeriod) ?: Int.MAX_VALUE }
     }
 
     // 下拉这一把手：数据只在进屏时拉一次，签完查寝、批完假之后不想杀进程重开。
     // 刷新时旧内容留在原位（不清空、不闪），新的到了再换 —— 一路加载一路蹦是他最烦的。
     // 两趟一起等：上面那一叠数和下半屏那几发不是一个来源，只等一边就是假动作。
     Refreshable({
-        model.refresh()
+        deps.model.refresh()
         todoTry++
-        runCatching { graph.home.load() }.getOrNull()?.onSuccess { extras = it }
+        runCatching { deps.loadExtras() }.getOrNull()?.onSuccess { extras = it }
     }, modifier.fillMaxSize()) {
         val scroll = rememberScrollState()
         Column(
@@ -257,7 +277,8 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
                     // 不替学校宣布你今天有没有课。
                     Spacer(Modifier.height(Gap.md))
                     HeroWallpaper(
-                        style = look.hero,
+                        style = look,
+                        art = deps.heroArt,
                         hadClassToday = state.today.isNotEmpty(),
                         known = state.todayKnown && !state.firstLoad,
                         modifier = Modifier.enterFade(session.generation),
@@ -276,7 +297,9 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
                      * 26sp 就放得下了；不是今天的（比如已过期的上一场）才整串照搬，不替它裁。
                      */
                     val dormRaw = d?.dormCheckState?.trimStart('—')?.trim().orEmpty()
-                    val todayPrefix = java.text.SimpleDateFormat("MM-dd", java.util.Locale.US).format(java.util.Date())
+                    // 对齐 `SimpleDateFormat("MM-dd")`：clockText 是 "yyyy-MM-dd HH:mm:ss"，
+                    // 第 5..10 位就是今天的 "MM-dd"（本机时区，同一口径）。
+                    val todayPrefix = clockText(nowMillis()).substring(5, 10)
                     val dormToday = dormRaw.startsWith(todayPrefix)
                     MetricCell(
                         label = if (dormToday) "今晚查寝" else "查寝",
@@ -292,13 +315,13 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
                 Row(Modifier.fillMaxWidth()) {
                     MetricCell(
                         "学期跑量",
-                        d?.runSemesterKm?.let { "%.2f".format(it) } ?: "—",
+                        d?.runSemesterKm?.let { fixed(it, 2) } ?: "—",
                         "公里",
                         modifier = Modifier.weight(1f),
                     )
                     MetricCell(
                         "其中晨跑",
-                        d?.runMorningKm?.let { "%.2f".format(it) } ?: "—",
+                        d?.runMorningKm?.let { fixed(it, 2) } ?: "—",
                         "公里",
                         modifier = Modifier.weight(1f),
                     )
@@ -318,7 +341,7 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
                             title = slot.course,
                             // 跟课程表同一张作息表：几点到几点写在副标题最前面，教室跟在后面
                             sub = listOf(
-                                com.andaxin.core.schedule.Periods.rangeText(slot.startPeriod, slot.periodCount).orEmpty(),
+                                LessonPeriods.rangeText(slot.startPeriod, slot.periodCount).orEmpty(),
                                 shortRoom(slot.room),
                             ).filter { it.isNotBlank() }.joinToString(" · "),
                             right = if (slot.periodCount > 1)
@@ -332,14 +355,15 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
             }
 
             // 四枚快捷格只负责跳，不在这儿摆数据：数据在各自那一屏里。
+            // 路由串与 app 侧 `shell/Route` 的常量一字不差（sport/dorm/card/repair/aiclass/affair）。
             Spacer(Modifier.height(Rhythm.sectionGap))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Gap.sm),
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
             ) {
-                listOf("运动" to com.andaxin.shell.Route.SPORT, "查寝" to com.andaxin.shell.Route.DORM,
-                    "校园卡" to com.andaxin.shell.Route.CARD, "报修" to com.andaxin.shell.Route.REPAIR,
-                    "AI 课堂" to com.andaxin.shell.Route.AICLASS, "待办" to com.andaxin.shell.Route.AFFAIR)
+                listOf("运动" to "sport", "查寝" to "dorm",
+                    "校园卡" to "card", "报修" to "repair",
+                    "AI 课堂" to "aiclass", "待办" to "affair")
                     .forEach { (name, at) -> Chip(name, picked = false) { open(at) } }
             }
 
@@ -360,7 +384,7 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
                             accent = if (v != "—" && v != "0") MaterialTheme.colorScheme.primary else null,
                             modifier = Modifier
                                 .weight(1f)
-                                .pressClick(shrink = false) { open(com.andaxin.shell.affairTab(i)) },
+                                .pressClick(shrink = false) { open("affair/tab/${i.coerceIn(0, 3)}") },
                         )
                         if (i != todoTabs.lastIndex) Spacer(Modifier.width(Gap.sm))
                     }
@@ -387,14 +411,14 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
  * 「下一节 / 正在上课」主色卡（照他发的那份规范里的 Now-Focus Card）。
  *
  * 左边课名 + 教室，右边一颗小药丸写"还有 N 分钟"或这一节的起止时间。
- * 钟点全部从 `Periods` 那张官方作息表查，和课程表同一份；连堂按 `periodCount` 算到最后一节，
+ * 钟点全部从 `LessonPeriods` 那张官方作息表查，和课程表同一份；连堂按 `periodCount` 算到最后一节，
  * 不再把 10:25–12:00 的课写成 10:25–11:10。
  */
 @Composable
 private fun NextClassCard(slot: TimetableSlot, nowMinute: Int, dark: Boolean, modifier: Modifier = Modifier) {
     val lastPeriod = slot.startPeriod + slot.periodCount - 1
-    val startMin = Periods.startMinute(slot.startPeriod)
-    val endMin = Periods.endMinute(lastPeriod)
+    val startMin = LessonPeriods.startMinute(slot.startPeriod)
+    val endMin = LessonPeriods.endMinute(lastPeriod)
         ?: startMin?.plus(45)
         ?: 0
     val inClass = startMin != null && nowMinute in startMin until endMin
@@ -403,7 +427,7 @@ private fun NextClassCard(slot: TimetableSlot, nowMinute: Int, dark: Boolean, mo
     val pill = when {
         inClass -> "还有 ${(endMin - nowMinute).coerceAtLeast(1)} 分钟下课"
         toStart in 0..90 -> "还有 $toStart 分钟"
-        else -> Periods.rangeText(slot.startPeriod, slot.periodCount).orEmpty()
+        else -> LessonPeriods.rangeText(slot.startPeriod, slot.periodCount).orEmpty()
     }
 
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
@@ -464,21 +488,27 @@ private fun NextClassCard(slot: TimetableSlot, nowMinute: Int, dark: Boolean, mo
  *
  * 为什么不是一块空白或者一句灰字：这一块是首页第一眼，空着整屏就塌了。
  * 三张图按一天的时段挑 —— 早上晨雾、下午金树、夜里月亮，正好跟"现在"对得上。
- * 图是打包进 `res/drawable-nodpi` 的（没有网络也能出），上面压一层深色渐变，
- * 白字放在任何一张图上都读得清。
+ * 图归 [art] 这个宿主槽画（android 是打包进 res/drawable-nodpi 的 hero_*，没有网络也能出；
+ * iOS 总装给原生资源），上面压一层深色渐变，白字放在任何一张图上都读得清。
  */
 @Composable
-private fun HeroWallpaper(style: HeroStyle, hadClassToday: Boolean, known: Boolean, modifier: Modifier = Modifier) {
-    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+private fun HeroWallpaper(
+    style: HeroLook,
+    art: (@Composable (HeroArt) -> Unit)?,
+    hadClassToday: Boolean,
+    known: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val hour = currentHour()
     // 自动跟一天的时段对：早上晨雾、下午金树、夜里月亮；钉死就照设置里那张。
     val picture = when (style) {
-        HeroStyle.Dawn -> R.drawable.hero_dawn
-        HeroStyle.Dusk -> R.drawable.hero_dusk
-        HeroStyle.Night -> R.drawable.hero_night
-        HeroStyle.Auto -> when (hour) {
-            in 5..11 -> R.drawable.hero_dawn
-            in 12..17 -> R.drawable.hero_dusk
-            else -> R.drawable.hero_night
+        HeroLook.Dawn -> HeroArt.Dawn
+        HeroLook.Dusk -> HeroArt.Dusk
+        HeroLook.Night -> HeroArt.Night
+        HeroLook.Auto -> when (hour) {
+            in 5..11 -> HeroArt.Dawn
+            in 12..17 -> HeroArt.Dusk
+            else -> HeroArt.Night
         }
     }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
@@ -488,12 +518,16 @@ private fun HeroWallpaper(style: HeroStyle, hadClassToday: Boolean, known: Boole
             .height(168.dp)
             .clip(shape),
     ) {
-        Image(
-            painter = painterResource(picture),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
+        if (art != null) {
+            art(picture)
+        } else {
+            // 占位：没有图的那一端给一块和日卡同族的渐变，白字照样读得清。
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Brush.linearGradient(listOf(Color(0xFF2F6BFF), Color(0xFF1E44C9)))),
+            )
+        }
         // 下半截压暗：白字压在任何一张图上都要能读
         Box(
             Modifier
@@ -551,6 +585,3 @@ private fun SectionBlock(text: String) {
         modifier = Modifier.padding(top = Rhythm.sectionGap, bottom = Gap.xs, start = Gap.xxs),
     )
 }
-
-/** 只在需要时把 host 拿出来用（服务清单的副标题已经不显示了，留着给详情用）。 */
-internal fun hostOf(url: String): String = runCatching { Uri.parse(url).host }.getOrNull().orEmpty()

@@ -1,11 +1,6 @@
 package com.andaxin.feature.me
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,26 +22,42 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.andaxin.app.LocalAppGraph
 import com.andaxin.core.design.Gap
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Palette
 import com.andaxin.core.design.Radius
 import com.andaxin.core.design.Type
-import com.andaxin.core.store.AvatarStore
-import com.andaxin.shell.Labeled
-import com.andaxin.shell.LoadWhy
+import com.andaxin.core.store.Session
+import com.andaxin.core.store.SessionStore
+import com.andaxin.core.store.WhoIs
+import com.andaxin.data.capture.Profile
 import com.andaxin.feature.brief.ScaffoldPage
+import com.andaxin.shell.Hairline
+import com.andaxin.shell.Labeled
 import com.andaxin.shell.Sheet
 import com.andaxin.shell.pressClick
 import com.andaxin.shell.rememberArmConfirm
 import kotlinx.coroutines.launch
+
+/*
+ * 平移注：从 app 的 `feature/me/ProfileScreen.kt` 搬进共享层（底栏五格那批）。
+ * 相册选择（ActivityResultContracts）、头像解码与落盘（AvatarStore）都是平台的事，
+ * 全部收进 `AvatarDeps` 宿主口；学籍资料那发只读口和「我是谁」缓存改成递进来。
+ * app 侧 Bits.kt 的 `LoadWhy` 还牵着 LocalAppGraph（一堆 app 侧的屏在用），搬不动 ——
+ * 这里留了一份私有同款，判据改成明着递的 `needsLogin`。
+ */
+
+/** 「个人信息」这一屏要接的。 */
+class ProfileDeps(
+    val session: SessionStore,
+    val who: WhoIs,
+    /** 学籍资料那发（app = CaptureProfile.load）。 */
+    val loadProfile: suspend () -> Result<Profile>,
+    /** 本机头像那一格。null = 这一端还没接头像，画名字首字的兜底。 */
+    val avatar: AvatarDeps? = null,
+)
 
 /**
  * 个人信息。点头像进来这一屏，里面是：
@@ -58,44 +70,36 @@ import kotlinx.coroutines.launch
  * 所以下面那行小字要写明这一点，不能让人以为换到学校那边去了。
  */
 @Composable
-fun ProfileScreen(onBack: () -> Unit) {
-    val graph = LocalAppGraph.current
-    val ctx = LocalContext.current
+fun ProfileScreen(deps: ProfileDeps, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val ink = LocalInk.current
-    val session by graph.session.state.collectAsStateWithLifecycle(com.andaxin.core.store.Session())
+    val session by deps.session.state.collectAsState(Session())
 
-    var profile by remember { mutableStateOf<com.andaxin.data.capture.Profile?>(null) }
+    var profile by remember { mutableStateOf<Profile?>(null) }
     var why by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     val quitArm = rememberArmConfirm()
-    var avatarNote by remember { mutableStateOf<String?>(null) }
+
+    // 头像不是 Compose 状态，宿主给个版本号，变了就换帧
+    val avatar = deps.avatar
+    LaunchedEffect(avatar) { avatar?.refresh() }
+    val avatarPresent = avatar?.present?.collectAsState(false)?.value ?: false
+    val avatarNote = avatar?.note?.collectAsState()?.value
 
     LaunchedEffect(session.generation, session.loggedIn) {
         loading = true
         why = null
         if (session.loggedIn) {
-            graph.profile.load()
+            deps.loadProfile()
                 .onSuccess {
                     profile = it
                     // 顺手回填「我是谁」那份缓存：从这一屏退回「我的」，名字下面那行
                     // 用的就是刚刷新过的值，不会再各拉各的
-                    graph.who.putProfile(session.account, it)
+                    deps.who.putProfile(session.account, it)
                 }
                 .onFailure { why = it.message ?: "资料没拉到" }
         }
         loading = false
-    }
-
-    // 头像不是 Compose 状态，版本号变了就重新解一次
-    LaunchedEffect(Unit) { AvatarStore.refresh(ctx) }
-    val avatarVersion by AvatarStore.version.collectAsStateWithLifecycle()
-    val avatar = remember(avatarVersion) { AvatarStore.load(ctx) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            avatarNote = if (AvatarStore.save(ctx, uri)) "换好了，只在本机生效。" else "这张图没读进来，换一张试试。"
-        }
     }
 
     ScaffoldPage(title = "个人信息", onBack = onBack) {
@@ -106,20 +110,11 @@ fun ProfileScreen(onBack: () -> Unit) {
                     .size(88.dp)
                     .clip(CircleShape)
                     .background(Palette.Sand, Radius.pill)
-                    .pressClick {
-                        picker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
+                    .pressClick { avatar?.pick?.invoke() },
                 contentAlignment = Alignment.Center,
             ) {
-                if (avatar != null) {
-                    Image(
-                        bitmap = avatar.asImageBitmap(),
-                        contentDescription = "头像",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(88.dp).clip(CircleShape),
-                    )
+                if (avatarPresent && avatar != null) {
+                    avatar.draw(88.dp)
                 } else {
                     Text(
                         text = session.userName.firstOrNull()?.toString() ?: "安",
@@ -154,7 +149,8 @@ fun ProfileScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(Gap.lg))
 
             if (!session.loggedIn) {
-                LoadWhy("登录后才看得到学籍资料。", wide = false)
+                LoadWhy("登录后才看得到学籍资料。", needsLogin = true,
+                    onLogin = { scope.launch { deps.session.leaveBrowsing() } }, wide = false)
             } else {
                 val p = profile
                 if (p != null) {
@@ -175,7 +171,7 @@ fun ProfileScreen(onBack: () -> Unit) {
                             Labeled(label = label, value = value)
                             if (i != rows.lastIndex) {
                                 Spacer(Modifier.height(Gap.xs))
-                                com.andaxin.shell.Hairline()
+                                Hairline()
                                 Spacer(Modifier.height(Gap.xs))
                             }
                         }
@@ -183,7 +179,8 @@ fun ProfileScreen(onBack: () -> Unit) {
                 } else if (loading) {
                     Text("正在拉资料…", fontSize = Type.meta, color = ink.faint)
                 } else {
-                    LoadWhy(why ?: "资料没拉到。")
+                    LoadWhy(why ?: "资料没拉到。", needsLogin = !session.loggedIn,
+                        onLogin = { scope.launch { deps.session.leaveBrowsing() } })
                 }
             }
 
@@ -209,9 +206,9 @@ fun ProfileScreen(onBack: () -> Unit) {
                                  * 真想忘掉口令，去那一页把勾去掉再登一次 —— 那是另一件事。
                                  */
                                 scope.launch {
-                                    graph.session.signOut(keepPassword = true)
+                                    deps.session.signOut(keepPassword = true)
                                     // 学院/班级那两份是内存里的，人退了就把上一位的资料一起放掉
-                                    graph.who.clear()
+                                    deps.who.clear()
                                     quitArm.disarm()
                                     // 退完要回到根：留在这一屏只会看见"未登录"和一颗没反应的「去登录」
                                     // （Gate 在 SHELF 那一层，这一屏是它上面的独立路由）。
@@ -232,6 +229,43 @@ fun ProfileScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(Gap.xxl))
+        }
+    }
+}
+
+/**
+ * 一屏没拉到数据时那一句 —— app 侧 Bits.kt 那份的私有同款。
+ *
+ * 两种语气，别混着涂：没登录是一种状态不是故障（走灰 + 给一条「去登录」，
+ * 只清"先不登录逛逛"那个标志，外层 Gate 会把登录那一屏端上来）；
+ * 真失败（连不上、网关给 HTML、结构不对）才用红色那句。
+ * 判据不问协议层要新异常类型 —— 界面这一层本来就知道 `session.loggedIn`。
+ */
+@Composable
+private fun LoadWhy(
+    why: String?,
+    needsLogin: Boolean,
+    onLogin: () -> Unit,
+    modifier: Modifier = Modifier,
+    wide: Boolean = true,
+) {
+    if (why.isNullOrBlank()) return
+    val ink = LocalInk.current
+    Column(modifier) {
+        Text(
+            text = why,
+            fontSize = Type.meta,
+            lineHeight = Type.metaLine,
+            color = if (needsLogin) ink.muted else MaterialTheme.colorScheme.error,
+        )
+        if (needsLogin) {
+            Spacer(Modifier.height(if (wide) Gap.lg else Gap.sm))
+            Text(
+                text = "去登录",
+                fontSize = Type.meta,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.pressClick(onClick = onLogin),
+            )
         }
     }
 }

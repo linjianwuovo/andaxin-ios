@@ -5,6 +5,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /*
+ * 平移注：从 app 的 `core/store/WhoIs.kt` 原样搬进共享层（底栏五格那批，「我的」要用）。
+ * 包名没变，app 侧 AppGraph 的 import 一行不用改。纯内存 Kotlin，四目标通用。
+ */
+
+/**
  * 「我是谁」这一格的两条只读结果：学院/专业/班级（queryStudentStatus）和
  * 实习生标记（checkIsInternStu）。
  *
