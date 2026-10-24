@@ -23,7 +23,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 17, weight: .medium)
-        label.text = "AndaXin · " + PlatformKt.platformName()
+        label.text = "AndaXin · " + SharedPlatform().name()
         vc.view.addSubview(label)
 
         window?.rootViewController = vc
