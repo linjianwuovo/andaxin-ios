@@ -2,32 +2,73 @@ import UIKit
 import shared
 
 /*
- * iOS 壳的入口。framework 接线版：脚本相位按当前 SDK/配置把对应 flavor 的
- * shared.framework 放到固定路径，工程静态引用它 —— 这行 platformName() 来自
- * shared（NSProcessInfo 那发），模拟器里看到它就等于「Kotlin→iOS 链路全程通」。
+ * iOS 原生壳：UITabBarController 做底栏（系统毛玻璃和切联动效白送），五个 tab 各挂
+ * 一个 ComposeUIViewController（内容区 = 共享层的 Compose 屏，与 Android 同一套代码）。
+ * Gate 骨架口径：signedIn 是 suspend（DataStore 现查），启动时在全局协程里查完再定根——
+ * 没登录给登录页，onDone 换五格底栏。真实 Gate（onboarded/到期/顶号）下一批接。
  */
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var graph: IosAppGraph?
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        let docs = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
+        let g = IosAppGraph(documentsPath: docs)
+        graph = g
+
         window = UIWindow(frame: UIScreen.main.bounds)
-
-        let vc = UIViewController()
-        let label = UILabel(frame: vc.view.bounds)
-        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        label.textAlignment = .center
-        label.font = .systemFont(ofSize: 17, weight: .medium)
-        label.text = "AndaXin · " + SharedPlatform().name()
-        vc.view.addSubview(label)
-
-        window?.rootViewController = vc
+        window?.rootViewController = splashHolder()
         window?.makeKeyAndVisible()
+
+        // signedIn() 挂起查 DataStore；launchMain 在主线程协程里回，直接切根是安全的
+        g.launchMain { [weak self] in
+            let signed = g.session.signedIn()
+            if signed {
+                self?.window?.rootViewController = self?.makeTabs(g)
+            } else {
+                self?.window?.rootViewController = self?.makeLogin(g)
+            }
+        }
         return true
+    }
+
+    /// 启动那一瞬间的占位（查 signedIn 通常 <10ms，但也不能白屏闪）
+    private func splashHolder() -> UIViewController {
+        let vc = UIViewController()
+        vc.view.backgroundColor = .systemBackground
+        return vc
+    }
+
+    /// 登录页：成功 onDone 换五格底栏
+    private func makeLogin(_ g: IosAppGraph) -> UIViewController {
+        g.loginViewController { [weak self] in
+            self?.window?.rootViewController = self?.makeTabs(g)
+        }
+    }
+
+    /// 五格底栏：标题跟 Android 那五格一致；图标下一批接 SF Symbols
+    private func makeTabs(_ g: IosAppGraph) -> UITabBarController {
+        let tabs = UITabBarController()
+
+        let home = g.homeViewController()
+        home.title = "首页"
+        let timetable = g.timetableViewController()
+        timetable.title = "课表"
+        let message = g.messageViewController()
+        message.title = "消息"
+        let notice = g.noticeViewController()
+        notice.title = "公告"
+        let me = g.meViewController()
+        me.title = "我的"
+
+        tabs.viewControllers = [home, timetable, message, notice, me]
+        tabs.tabBar.isTranslucent = true
+        return tabs
     }
 }
