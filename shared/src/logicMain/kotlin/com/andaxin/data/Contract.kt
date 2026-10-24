@@ -1,6 +1,5 @@
 package com.andaxin.data
 
-import androidx.compose.runtime.Immutable
 
 /*
  * 协议层的"要什么"，不含"怎么要"。
@@ -10,7 +9,6 @@ import androidx.compose.runtime.Immutable
  * 不许拿旧仓的字段名当"已知"。他补完一次抓包，就把 CaptureFeed 那一侧填上、这行注释改成实样出处。
  */
 
-@Immutable
 data class TimetableSlot(
     val courseId: String,
     val course: String,
@@ -21,7 +19,6 @@ data class TimetableSlot(
     val periodCount: Int,
 )
 
-@Immutable
 data class MessageItem(
     val id: String,
     val title: String,
@@ -33,7 +30,6 @@ data class MessageItem(
 
 enum class MessageCategory { Academic, Dorm, Sports, System }
 
-@Immutable
 data class NoticeItem(
     val id: String,
     val title: String,
@@ -42,7 +38,6 @@ data class NoticeItem(
     val coverUrl: String?,
 )
 
-@Immutable
 data class NoticeBody(
     val title: String,
     val publishedAt: String,
@@ -50,7 +45,6 @@ data class NoticeBody(
     val attachments: List<String>,
 )
 
-@Immutable
 data class Dashboard(
     val greeting: String,
     /** null = 这一周整份没拿到（网络挂了、会话被顶了）；0 = 真的一节没有。两者不能都写成 0。 */
@@ -81,7 +75,6 @@ interface TimetableFeed {
 }
 
 /** 一学期一共几周、现在第几周。`weeks` 是 1..N 的周次序号。 */
-@Immutable
 data class WeekTable(val weeks: List<Int> = emptyList(), val now: Int = 0)
 
 /** 消息中心。【取证】抓包 4 处 + .do 7 处，是证据最厚的一块。 */

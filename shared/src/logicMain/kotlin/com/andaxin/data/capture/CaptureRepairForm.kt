@@ -1,5 +1,6 @@
 package com.andaxin.data.capture
 
+import kotlin.concurrent.Volatile
 import com.andaxin.data.brief.Field
 import com.andaxin.data.brief.FormSource
 import com.andaxin.data.brief.FormSpec

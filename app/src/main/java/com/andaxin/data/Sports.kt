@@ -1,6 +1,5 @@
 package com.andaxin.data
 
-import androidx.compose.runtime.Immutable
 import com.andaxin.core.map.LatLng
 
 /*
@@ -9,7 +8,6 @@ import com.andaxin.core.map.LatLng
  * 这些细节要等我们自己再抓一次实样才写进 CaptureSports，不照旧仓的注释当已知。
  */
 
-@Immutable
 data class RunPoint(
     val atMillis: Long,
     val where: LatLng,      // WGS-84，交给学校前才转 BD-09
@@ -17,14 +15,12 @@ data class RunPoint(
 )
 
 /** 本机画的一条模拟线（只在高级入口里可见/可用）。 */
-@Immutable
 data class RouteTemplate(
     val id: String,
     val name: String,
     val points: List<LatLng>,
 )
 
-@Immutable
 data class RunRecord(
     val id: String,
     val date: String,
@@ -35,7 +31,6 @@ data class RunRecord(
     val invalidReason: String,
 )
 
-@Immutable
 data class RunDetail(
     val record: RunRecord,
     val track: List<LatLng>,
@@ -43,7 +38,6 @@ data class RunDetail(
     val schoolComment: String,
 )
 
-@Immutable
 data class SportSummary(
     val weekKm: Double,
     val weekRequiredKm: Double,
@@ -65,7 +59,6 @@ data class SportSummary(
  * `extra/extraDetailInfo`（日期/今日/最长/有效阈值）、`index/clubInfo`（体育课）、
  * `check/getTotalInfo`（晨跑/团体）。数字能缺就缺 —— 缺了界面写"—"，不拿 0 冒充。
  */
-@Immutable
 data class SportPlan(
     val grade: String = "",
     val termTitle: String = "",
@@ -92,14 +85,12 @@ data class SportPlan(
 )
 
 /** 开始一场时校方给的那两个 id：上传时 `exerciseId` / `memberId` 就填它们。 */
-@Immutable
 data class RunSession(
     val exerciseId: String,
     val memberId: String,
     val runningType: String = "1",
 )
 
-@Immutable
 data class RunDraft(
     val startedAtMillis: Long,
     val endedAtMillis: Long,

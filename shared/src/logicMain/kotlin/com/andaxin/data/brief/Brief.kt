@@ -1,6 +1,5 @@
 package com.andaxin.data.brief
 
-import androidx.compose.runtime.Immutable
 
 /*
  * 一批"列表 / 详情 / 表单"形状的通用契约。
@@ -15,7 +14,6 @@ import androidx.compose.runtime.Immutable
 
 enum class Flag { None, Ok, Bad, Warn, Unread }
 
-@Immutable
 data class BriefRow(
     val id: String,
     val title: String,
@@ -24,7 +22,6 @@ data class BriefRow(
     val flag: Flag = Flag.None,
 )
 
-@Immutable
 data class BriefDetail(
     val title: String,
     val fields: List<Pair<String, String>> = emptyList(),
@@ -45,7 +42,6 @@ data class BriefDetail(
  * 详情里的一颗写操作键。[key] 是给 [DetailSource.act] 认的暗号，[label] 是给人看的话，
  * 而且 **label 用校方给的原文**（`getButtons` 里那条 `label`），我们只在这张表里把它对上口。
  */
-@Immutable
 data class Action(
     val key: String,
     val label: String,
@@ -59,14 +55,12 @@ data class Action(
  * 一颗写操作键要收的答案。界面上按 [groups] 的顺序画，回给 [DetailSource.act] 的是 `group.key -> 选中的原文`。
  * 选项文字就是发出去的顺序索引由数据源自己翻 —— 界面只负责把选中的那条交回去。
  */
-@Immutable
 data class Prompt(
     val title: String,
     val groups: List<PromptGroup>,
     val note: String = "",
 )
 
-@Immutable
 data class PromptGroup(
     val key: String,
     val label: String,
@@ -86,7 +80,6 @@ data class Step(
     val head: String = "",
 )
 
-@Immutable
 sealed class Field {
     abstract val key: String
     abstract val label: String
@@ -104,7 +97,6 @@ sealed class Field {
     data class Person(override val key: String, override val label: String) : Field()
 }
 
-@Immutable
 /**
  * [sample] = 这是没登录时那份形状占位的表：字段是编的，提交也是发不出去的。
  * [defaults] = 键（= 校方的 `model`）→ 该预先填进去的值。发起流程那张表里"学号/姓名/班级"这一类

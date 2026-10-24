@@ -259,7 +259,7 @@ class CaptureRepairDetail(private val school: School) : DetailSource {
      */
     private fun cnTime(s: String): String {
         val m = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2}:\d{2})""").find(s) ?: return s
-        return "%s-%s %s".format(m.groupValues[2], m.groupValues[3], m.groupValues[4])
+        return m.groupValues[2] + "-" + m.groupValues[3] + " " + m.groupValues[4]
     }
 }
 
