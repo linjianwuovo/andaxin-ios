@@ -55,6 +55,11 @@ mlkit-barcode = { group = "com.google.mlkit", name = "barcode-scanning", version
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+# shared 那个 KMP 模块用的库插件。app 模块仍然不碰 kotlin-android（AGP 9 自带 Kotlin）。
+# 注意是 AGP 9 那个新的 KMP 库插件：com.android.library 的老 DSL 和 KMP 的 androidTarget()
+# 在 AGP 9 上不兼容（newDsl=true 默认开），报错原文给的出路就是它。
+android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
