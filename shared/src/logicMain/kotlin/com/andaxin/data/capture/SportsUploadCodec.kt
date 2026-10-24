@@ -1,11 +1,6 @@
 package com.andaxin.data.capture
 
-import android.util.Base64
 import com.andaxin.core.map.Geo
-import java.security.KeyFactory
-import java.security.spec.X509EncodedKeySpec
-import java.util.Locale
-import javax.crypto.Cipher
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
 
@@ -60,9 +55,9 @@ object SportsUploadCodec {
         putField(obj, "runningType", run.runningType)
         putField(obj, "startDate", run.startText)
         putField(obj, "endDate", run.endText)
-        putField(obj, "mile", "%.2f".format(Locale.US, run.mileKm))
+        putField(obj, "mile", com.andaxin.core.text.fixed(run.mileKm, 2))
         putField(obj, "time", run.timeSeconds.toString())
-        putField(obj, "speed", "%.2f".format(Locale.US, run.speedKmh))
+        putField(obj, "speed", com.andaxin.core.text.fixed(run.speedKmh, 2))
         // 只加密键名；值必须是明文，理由见类注释
         obj.put(encrypt("runningRoute"), trackJson(run.trackWgs))
         putField(obj, "sourceInfo", run.deviceModel)
@@ -85,30 +80,15 @@ object SportsUploadCodec {
             val bd = Geo.wgsToBd(lat, lng)
             if (i > 0) sb.append(',')
             sb.append("{\"latitude\":")
-                .append(String.format(Locale.US, "%.6f", bd.latitude))
+                .append(com.andaxin.core.text.fixed(bd.latitude, 6))
                 .append(",\"longitude\":")
-                .append(String.format(Locale.US, "%.6f", bd.longitude))
+                .append(com.andaxin.core.text.fixed(bd.longitude, 6))
                 .append('}')
         }
         return sb.append(']').toString()
     }
 
-    fun encrypt(plain: String): String {
-        val key = KeyFactory.getInstance("RSA")
-            .generatePublic(X509EncodedKeySpec(Base64.decode(PUBLIC_KEY, Base64.DEFAULT)))
-        // 官方用的是 "RSA/None/PKCS1Padding"；部分 ROM 只认 ECB 写法，两种都试
-        val cipher = runCatching { Cipher.getInstance("RSA/None/PKCS1Padding") }
-            .getOrElse { Cipher.getInstance("RSA/ECB/PKCS1Padding") }
-        cipher.init(Cipher.ENCRYPT_MODE, key)
-
-        val data = plain.toByteArray(Charsets.UTF_8)
-        val out = java.io.ByteArrayOutputStream(data.size + 256)
-        var offset = 0
-        while (offset < data.size) {
-            val end = minOf(offset + BLOCK, data.size)
-            out.write(cipher.doFinal(data, offset, end - offset))
-            offset = end
-        }
-        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-    }
+    // 平移注：分块加密那套与登录那把同构，直接走共享层的 rsaEncryptPkcs1Base64（117 分块、PKCS1、整串 base64）。
+    fun encrypt(plain: String): String =
+        com.andaxin.core.net.rsaEncryptPkcs1Base64(plain.encodeToByteArray(), PUBLIC_KEY)
 }

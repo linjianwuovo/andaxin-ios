@@ -371,7 +371,7 @@ private fun validity(plan: SportPlan?): String {
         plan.minOnceKm?.let { add("单次不少于 ${num(it)} 公里") }
         plan.maxDayKm?.let { add("每天最多累计 ${num(it)} 公里") }
         if (plan.minSpeedKmh != null && plan.maxSpeedKmh != null) {
-            add("速率 ${num(plan.minSpeedKmh)}–${num(plan.maxSpeedKmh)} km/h")
+            add("速率 ${num(plan.minSpeedKmh ?: 0.0)}–${num(plan.maxSpeedKmh ?: 0.0)} km/h")
         }
     }
     return parts.joinToString("，")

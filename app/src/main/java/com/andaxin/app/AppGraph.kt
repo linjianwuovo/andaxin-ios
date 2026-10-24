@@ -303,7 +303,7 @@ class AppGraph(val context: Context) {
      * 见 `CaptureSports` 顶上那段取证。
      */
     private val localSports by lazy {
-        LocalSports(File(context.filesDir, "sport_routes.json"))
+        LocalSports(files)
     }
 
     val sports: SportsFeed by lazy { CaptureSports(school, localSports) }

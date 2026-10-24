@@ -1,9 +1,7 @@
 package com.andaxin.data.capture
 
-import android.os.Build
 import com.andaxin.core.map.Geo
 import com.andaxin.core.map.LatLng
-import com.andaxin.core.net.Http
 import com.andaxin.data.RunDetail
 import com.andaxin.data.RunDraft
 import com.andaxin.data.RunRecord
@@ -11,15 +9,10 @@ import com.andaxin.data.RunSession
 import com.andaxin.data.SportPlan
 import com.andaxin.data.SportSummary
 import com.andaxin.data.SportsFeed
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Locale
+import okio.IOException
 import kotlin.math.roundToInt
-import okhttp3.Request
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
 
@@ -122,7 +115,7 @@ class CaptureSports(
             val year = termData?.optString("XN").orEmpty()
             val termNo = termData?.optString("XQ").orEmpty()
             val title = if (year.isBlank()) "" else {
-                "%s-%d-%s".format(year, (year.toIntOrNull() ?: 0) + 1, termNo.ifBlank { "1" })
+                "$year-${(year.toIntOrNull() ?: 0) + 1}-${termNo.ifBlank { "1" }}"
             }
 
             val plan = SportPlan(
@@ -202,7 +195,7 @@ class CaptureSports(
     }
 
     override suspend fun records(page: Int): Result<List<RunRecord>> =
-        recordsOfMonth(SimpleDateFormat("yyyy-MM", Locale.US).format(java.util.Date()))
+        recordsOfMonth(com.andaxin.core.concurrency.yearMonthIso())
 
     /** 维护申请列表。实样是空的，所以条目键名没验过 —— 取不到标题就明说，不编。 */
     override suspend fun maintenanceLog(): Result<List<Pair<String, String>>> {
@@ -340,7 +333,7 @@ class CaptureSports(
                 timeSeconds = draft.seconds.toLong(),
                 speedKmh = speed,
                 trackWgs = draft.points.map { it.where.latitude to it.where.longitude },
-                deviceModel = Build.MODEL.orEmpty(),
+                deviceModel = com.andaxin.core.concurrency.deviceModel(),
             ),
         )
         val code = school.userCode()
@@ -395,25 +388,23 @@ class CaptureSports(
      * `GET /mobile/time/getServerTime.do` → `data.serverTime:"2026-10-21 17:47:18"`（10-21 现打）。
      * 取不到就退回本机时间，别把一场跑步卡死在一个时间接口上。
      */
-    private suspend fun serverTimeText(): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val req = Request.Builder()
-                .url("$BASE/time/getServerTime.do")
-                .get()
-                .header("Accept", "application/json")
-                .header("User-Agent", School.AGENT)
-                .build()
-            Http.client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
-                val text = resp.body?.string().orEmpty()
-                JSONObject(text).optJSONObject("data")
-                    ?.optString("serverTime")?.takeIf { it.isNotBlank() }
-            }
-        }.getOrNull()
-    }
+    private val engine: com.andaxin.core.net.HttpEngine =
+        com.andaxin.core.net.createHttpEngine(com.andaxin.core.net.HttpEngineConfig())
 
-    private fun fmtTime(millis: Long): String =
-        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(java.util.Date(millis))
+    private suspend fun serverTimeText(): String? = runCatching {
+        val resp = engine.execute(
+            com.andaxin.core.net.HttpCall(
+                method = "GET",
+                url = "$BASE/time/getServerTime.do",
+                headers = listOf("Accept" to "application/json", "User-Agent" to School.AGENT),
+            ),
+        )
+        if (!resp.isSuccessful) return@runCatching null
+        com.andaxin.core.json.JSONObject(resp.bodyText).optJSONObject("data")
+            ?.optString("serverTime")?.takeIf { it.isNotBlank() }
+    }.getOrNull()
+
+    private fun fmtTime(millis: Long): String = com.andaxin.core.concurrency.clockText(millis)
 
     /**
      * 三键身份 + 分页/日期等业务参数。见文件注释那段"身份其实只要三个键"。
@@ -487,7 +478,9 @@ class CaptureSports(
         fun pace(km: Double, minutes: Double): String {
             if (km <= 0.0 || minutes <= 0.0) return "—"
             val per = minutes / km
-            return "%d'%02d\"/km".format(per.toInt(), ((per - per.toInt()) * 60).roundToInt())
+            val m = per.toInt()
+            val sec = ((per - m) * 60).roundToInt()
+            return m.toString() + "'" + sec.toString().padStart(2, '0') + "\"/km"
         }
 
         /** 明细的 `time` 是 `"00:15:08"` 这种时长。 */
