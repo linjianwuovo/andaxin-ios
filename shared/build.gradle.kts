@@ -23,7 +23,16 @@ kotlin {
         minSdk = 26
     }
 
-    iosArm64()
+    // 静态 framework：侧载链路（Sideloadly/爱思）重签时不用再处理嵌套 dylib，模拟器/CI 也省一步。
+    // baseName 定死 "shared"，iosApp 那个 Xcode 工程按这个名字挂依赖。
+    iosArm64() {
+        binaries {
+            framework {
+                baseName = "shared"
+                isStatic = true
+            }
+        }
+    }
 
     sourceSets {
         commonMain {

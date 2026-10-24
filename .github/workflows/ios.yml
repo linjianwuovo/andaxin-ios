@@ -1,0 +1,74 @@
+name: ios
+
+# 骨架：还没在 GitHub 上真跑过——kmp 分支推上远端之前这个文件不会动。
+# 首跑预期要小改的位置：scheme 名、模拟器机型（iPhone 16 会不会在 runner 上）、
+# xcodebuild 那两组参数。跑通之后模拟器截屏就是"能点开"的证据，无签名 ipa 给
+# Sideloadly/爱思在 Windows 侧重签侧载。
+
+on:
+  push:
+    branches: [kmp]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: 模拟器出包 + 截屏 + 无签名 ipa
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Kotlin 先过一遍（klib 编译，和 xcodebuild 分开看好定位）
+        run: ./gradlew :shared:compileKotlinIosArm64 --console=plain
+
+      - name: 装 xcodegen 并生成工程
+        run: |
+          brew install xcodegen
+          cd iosApp && xcodegen -s project.yml
+
+      - name: 模拟器构建（framework 由工程里那段 preBuildScript 现链）
+        run: |
+          set -o pipefail
+          xcodebuild -project iosApp/AndaXin.xcodeproj \
+            -scheme AndaXin -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build \
+            | xcbeautify --quiet
+
+      - name: 模拟器装上、点亮、截屏
+        run: |
+          xcrun simctl list devices available | grep iPhone || true
+          UDID=$(xcrun simctl list devices available | grep "iPhone 16 (" | head -1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          echo "UDID=$UDID"
+          xcrun simctl boot "$UDID" || true
+          APP=$(find build/Build/Products -name 'AndaXin.app' -path '*iphonesimulator*' | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.andaxin.ios
+          sleep 5
+          xcrun simctl io "$UDID" screenshot simulator-launch.png
+
+      - name: 无签名真机 ipa（Sideloadly/爱思在 PC 上重签用）
+        run: |
+          set -o pipefail
+          xcodebuild -project iosApp/AndaXin.xcodeproj \
+            -scheme AndaXin -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build \
+            | xcbeautify --quiet
+          APP=$(find build-device/Build/Products -name 'AndaXin.app' -path '*iphoneos*' | head -1)
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry AndaXin-unsigned.ipa Payload
+          unzip -l AndaXin-unsigned.ipa | head -5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-skeleton
+          path: |
+            iosApp/simulator-launch.png
+            AndaXin-unsigned.ipa
+          if-no-files-found: warn
