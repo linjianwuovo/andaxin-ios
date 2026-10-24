@@ -13,6 +13,7 @@ serialization-json = "1.9.0"
 coroutines = "1.10.2"
 ktor = "3.2.2"
 org-json = "20250517"
+jetbrains-compose = "1.8.0"
 kotlinx-datetime = "0.6.1"
 coil = "3.0.4"
 # 外观三件套：他定的样子，留着
@@ -74,4 +75,6 @@ android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# JetBrains Compose Multiplatform：提供 compose.* 依赖 DSL + iOS 侧的 Skia 渲染
+jetbrains-compose = { id = "org.jetbrains.compose", version.ref = "jetbrains-compose" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

@@ -12,6 +12,8 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kmp.library)
+    // Compose 编译器插件（让 @Composable 注解过的代码能编出 Kotlin/Native 目标）
+    alias(libs.plugins.kotlin.compose)
 }
 
 kotlin {
@@ -53,6 +55,12 @@ kotlin {
                 implementation(libs.datastore.preferences.core)
                 // 日期：java.time 的多平台替身（CaptureYwlz 的 LocalDate、之后请假表单那批全靠它）
                 implementation(libs.kotlinx.datetime)
+
+                // Compose Multiplatform：显式坐标（JB 插件和 AGP9 不兼容，走 artifact 直引）
+                implementation("org.jetbrains.compose.runtime:runtime:1.8.0")
+                implementation("org.jetbrains.compose.foundation:foundation:1.8.0")
+                implementation("org.jetbrains.compose.material3:material3:1.8.0")
+                implementation("org.jetbrains.compose.ui:ui:1.8.0")
             }
         }
 
