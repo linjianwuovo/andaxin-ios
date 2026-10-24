@@ -1,12 +1,11 @@
 package com.andaxin.data.capture
 
 import com.andaxin.core.net.Crypto
-import com.andaxin.core.net.Http
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.Request
+import com.andaxin.core.net.HttpBody
+import com.andaxin.core.net.HttpCall
+import com.andaxin.core.net.HttpEngine
+import com.andaxin.core.net.HttpEngineConfig
+import com.andaxin.core.net.createHttpEngine
 import com.andaxin.core.json.JSONObject
 
 /**
@@ -46,10 +45,9 @@ class AuthUnreachable(override val message: String) : Exception(message)
 
 class AuthFeed {
 
-    private val client = Http.client.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val engine: HttpEngine = createHttpEngine(
+        HttpEngineConfig(connectTimeoutMs = 15_000, readTimeoutMs = 20_000),
+    )
 
     suspend fun login(userCode: String, password: String): Result<TokenBundle> =
         post("$AUTH_BASE/mobile/getToken.do", "userCode" to userCode, "password" to Crypto.encryptPassword(password))
@@ -72,47 +70,53 @@ class AuthFeed {
     suspend fun refresh(refreshToken: String): Result<TokenBundle> =
         post("$AUTH_BASE/mobile/refresh.do", "refresh_token" to refreshToken)
 
-    private suspend fun post(url: String, vararg fields: Pair<String, String>) = withContext(Dispatchers.IO) {
-        val form = FormBody.Builder().apply { fields.forEach { (k, v) -> add(k, v) } }.build()
-        val request = Request.Builder().url(url).post(form)
-            .header("Accept", "application/json")
-            .build()
-        try {
-            client.newCall(request).execute().use { resp ->
-                val body = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) {
-                    // 非 2xx 不算"学校否掉了口令"：网关/服务器的问题不该把记的口令擦掉
-                    return@use Result.failure(AuthUnreachable("学校那边回了 ${resp.code}"))
-                }
-                val root = runCatching { JSONObject(body) }.getOrNull()
-                    ?: return@use Result.failure(AuthUnreachable("回来的不是 JSON，可能被网关拦了"))
-                // flag:false 就是校方自己的"不行"。空 POST 也回这个形状（`{"flag":false,"code":"S9999999"}`，
-                // 10-19 现打），但它不带 msg —— 没 msg 不等于没答，照样按否掉处理。
-                if (!root.optBoolean("flag", false)) {
-                    return@use Result.failure(AuthRejected(
+    private suspend fun post(url: String, vararg fields: Pair<String, String>): Result<TokenBundle> {
+        val reply = runCatching {
+            engine.execute(
+                HttpCall(
+                    url = url,
+                    headers = listOf("Accept" to "application/json"),
+                    body = HttpBody.Form(fields.toList()),
+                ),
+            )
+        }
+        return try {
+            val resp = reply.getOrThrow()
+            val body = resp.bodyText
+            if (!resp.isSuccessful) {
+                // 非 2xx 不算"学校否掉了口令"：网关/服务器的问题不该把记住的口令擦掉
+                return Result.failure(AuthUnreachable("学校那边回了 ${resp.status}"))
+            }
+            val root = runCatching { JSONObject(body) }.getOrNull()
+                ?: return Result.failure(AuthUnreachable("回来的不是 JSON，可能被网关拦了"))
+            // flag:false 就是学校自己的"不行"。空 POST 也回这个形状（`{"flag":false,"code":"S9999999"}`，
+            // 10-19 现打），但它不带 msg —— 没 msg 不等于没答，照样按否掉处理。
+            if (!root.optBoolean("flag", false)) {
+                return Result.failure(
+                    AuthRejected(
                         root.optString("msg").ifBlank { "账号或口令不对，或者要先改口令" }
-                    ))
-                }
-                // token 在 data.token 这一层，只钻根节点会静默拿到空串
-                val token = root.optJSONObject("data")?.optJSONObject("token")
-                    ?: return@use Result.failure(AuthUnreachable("没拿到 token：回来的结构不对"))
-                val access = token.optString("access_token")
-                if (access.isBlank()) {
-                    return@use Result.failure(AuthRejected("账号或口令不对，或者要先改口令"))
-                }
-                Result.success(
-                    TokenBundle(
-                        accessToken = access,
-                        refreshToken = token.optString("refresh_token"),
-                        userCode = token.optString("userCode"),
-                        userName = token.optString("userName"),
-                        userType = token.optString("userType", "1"),
-                        expiresInSeconds = token.optLong("expires_in", 28800L),
                     )
                 )
             }
+            // token 在 data.token 这一层，只钻根节点会静默拿到空
+            val token = root.optJSONObject("data")?.optJSONObject("token")
+                ?: return Result.failure(AuthUnreachable("没拿到 token：回来的结构不对"))
+            val access = token.optString("access_token")
+            if (access.isBlank()) {
+                return Result.failure(AuthRejected("账号或口令不对，或者要先改口令"))
+            }
+            Result.success(
+                TokenBundle(
+                    accessToken = access,
+                    refreshToken = token.optString("refresh_token"),
+                    userCode = token.optString("userCode"),
+                    userName = token.optString("userName"),
+                    userType = token.optString("userType", "1"),
+                    expiresInSeconds = token.optLong("expires_in", 28800L),
+                )
+            )
         } catch (e: Exception) {
-            Result.failure(AuthUnreachable("连不上学校：${e.message ?: e.javaClass.simpleName}"))
+            Result.failure(AuthUnreachable("连不上学校：" + (e.message ?: e::class.simpleName)))
         }
     }
 }
