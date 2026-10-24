@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -58,7 +56,6 @@ import com.andaxin.data.brief.FormSource
 import com.andaxin.data.brief.ListSource
 import com.andaxin.shell.Chip
 import com.andaxin.shell.Hairline
-import com.andaxin.shell.Refreshable
 import com.andaxin.shell.adxViewModel
 import com.andaxin.shell.Labeled
 import com.andaxin.shell.RowLine
@@ -67,9 +64,6 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -658,55 +652,10 @@ private fun StepRow(s: com.andaxin.data.brief.Step, last: Boolean) {
     }
 }
 
-/**
- * 三种页共用的那一层壳。
- *
- * 换成 Miuix 的 `Scaffold` + `SmallTopAppBar`：HyperOS 那一档标题栏自带状态栏与
- * 刘海的留白，以前是我们手搓一个 `Spacer(Gap.xl)` 顶出来的，换个机型就得重调一次。
- * 返回那颗键仍然写"‹ 返回"三个字 —— 这仓的返回入口一直是这个说法，不换图标。
+/*
+ * 平移注：`ScaffoldPage`（三种页共用的那层壳）进共享层了，
+ * 在 shared logicMain 的 `feature/brief/Page.kt` —— 登录那一批共享层界面要用它。包名没变。
  */
-@Composable
-fun ScaffoldPage(
-    title: String,
-    onBack: () -> Unit,
-    /** 给了这一颗，这一屏就能下拉刷新；它是挂起的 —— 拉完才收指示器，不等就是假动作。 */
-    onRefresh: (suspend () -> Unit)? = null,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
-) {
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = title,
-                navigationIcon = {
-                    Text(
-                        "‹ 返回",
-                        fontSize = Type.body,
-                        color = LocalInk.current.muted,
-                        modifier = Modifier.pressClick(shrink = false, onClick = onBack).padding(horizontal = Gap.md, vertical = Gap.sm),
-                    )
-                },
-            )
-        },
-        containerColor = topBarBackdrop(),
-    ) { bars ->
-        Refreshable(onRefresh, Modifier.fillMaxSize()) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .padding(bars)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = Gap.screen),
-            ) {
-                Spacer(Modifier.height(Gap.md))
-                content()
-                Spacer(Modifier.height(Gap.xxl))
-            }
-        }
-    }
-}
-
-@Composable
-private fun topBarBackdrop() = MiuixTheme.colorScheme.background
 
 /**
  * 这一组现在要不要出现：`onlyWhen = (组key -> 必须选中的那一条)`。

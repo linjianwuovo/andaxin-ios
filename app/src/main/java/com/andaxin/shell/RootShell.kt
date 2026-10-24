@@ -67,6 +67,7 @@ import com.andaxin.feature.modules.HolidayListScreen
 import com.andaxin.feature.modules.LaborDetailScreen
 import com.andaxin.feature.modules.LaborListScreen
 import com.andaxin.feature.me.ProfileScreen
+import com.andaxin.feature.modules.LoginDeps
 import com.andaxin.feature.modules.LoginScreen
 import com.andaxin.feature.modules.MoreScreen
 import com.andaxin.feature.notify.NotifyScreen
@@ -274,7 +275,20 @@ fun RootShell() {
         page(Route.NOTIFY) { NotifyScreen(onBack = { nav.popBackStack() }) }
         page(Route.CARD) { CampusCardScreen(open = { nav.navigate(it) }, onBack = { nav.popBackStack() }) }
         page(Route.CARD_FLOWS) { CardFlowsScreen(onBack = { nav.popBackStack() }) }
-        page(Route.LOGIN) { LoginScreen(onDone = { nav.popBackStack() }, onBack = { nav.popBackStack() }) }
+        page(Route.LOGIN) {
+            LoginScreen(
+                // 登录屏进共享层了，graph 的四路依赖在这里明着递（见 shared 的 feature/modules/Login.kt）
+                LoginDeps(
+                    auth = graph.auth,
+                    session = graph.session,
+                    vault = graph.vault,
+                    kicked = graph.keepAlive.kicked,
+                    consumeKicked = graph.keepAlive::consumeKicked,
+                ),
+                onDone = { nav.popBackStack() },
+                onBack = { nav.popBackStack() },
+            )
+        }
 
         page(Route.DORM) { DormBoardScreen(open = { nav.navigate(it) }, onBack = { nav.popBackStack() }) }
         page(Route.DORM_TASK, arguments = listOf(idPattern())) { e ->
@@ -431,6 +445,13 @@ private fun Gate(appearance: Appearance, open: (String) -> Unit) {
     when {
         !session.onboarded -> OnboardingScreen(onAgree = { scope.launch { graph.session.agreeTerms() } })
         !session.loggedIn && !session.browsing -> LoginScreen(
+            LoginDeps(
+                auth = graph.auth,
+                session = graph.session,
+                vault = graph.vault,
+                kicked = graph.keepAlive.kicked,
+                consumeKicked = graph.keepAlive::consumeKicked,
+            ),
             onDone = { open(Route.SHELF) },
             onBack = { scope.launch { graph.session.browseWithoutLogin() } },
         )

@@ -1,7 +1,7 @@
 package com.andaxin.core.concurrency
 
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate

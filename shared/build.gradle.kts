@@ -56,11 +56,18 @@ kotlin {
                 // 日期：java.time 的多平台替身（CaptureYwlz 的 LocalDate、之后请假表单那批全靠它）
                 implementation(libs.kotlinx.datetime)
 
-                // Compose Multiplatform：显式坐标（JB 插件和 AGP9 不兼容，走 artifact 直引）
-                implementation("org.jetbrains.compose.runtime:runtime:1.8.0")
-                implementation("org.jetbrains.compose.foundation:foundation:1.8.0")
-                implementation("org.jetbrains.compose.material3:material3:1.8.0")
-                implementation("org.jetbrains.compose.ui:ui:1.8.0")
+                // Compose Multiplatform：显式坐标（JB 插件和 AGP9 不兼容，走 artifact 直引）。
+                // 1.8.0 → 1.12.0：登录批把 miuix 0.9.4 拉进来后，它经 material3-window-size-class
+                // 1.12.0-alpha03 强制整套 org.jetbrains.compose 上 1.12.0（压不回去），索性对齐；
+                // 与 app 的 androidx BOM 2026.03.00 同时代。
+                implementation("org.jetbrains.compose.runtime:runtime:1.12.0")
+                implementation("org.jetbrains.compose.foundation:foundation:1.12.0")
+                implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
+                implementation("org.jetbrains.compose.ui:ui:1.12.0")
+                // 外观：他定的那套 HyperOS 风零件（Miuix）。本身是多平台库，
+                // androidJvm/iosArm64/iosSimulatorArm64/jvm 四端变体齐全；
+                // 登录这一批共享层界面要用它（输入框、按钮、Scaffold 一族）。
+                implementation(libs.miuix.ui)
             }
         }
 
