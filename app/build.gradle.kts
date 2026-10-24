@@ -100,6 +100,10 @@ android {
 }
 
 dependencies {
+    // 共享内核：core/store（Store/SessionStore/Snap/Vault）和 data/capture 的 School
+    // 已经住在里面；包名没变，app 侧 import 一行不用改。
+    implementation(project(":shared"))
+
     val bom = platform(libs.compose.bom)
     implementation(bom)
     debugImplementation(libs.compose.ui.tooling)

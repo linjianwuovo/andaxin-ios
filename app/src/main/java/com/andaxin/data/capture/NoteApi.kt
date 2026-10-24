@@ -7,8 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 笔记（FIF 的笔记站）。**独立域名、独立 client、独立错误态**，跟主站不是一套，

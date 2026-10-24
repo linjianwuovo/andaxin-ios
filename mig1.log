@@ -1,0 +1,106 @@
+
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Configure project :shared
+w: Native task 'iosSimulatorArm64Test' is disabled
+Task 'iosSimulatorArm64Test' for target 'ios_simulator_arm64' cannot run on the current host (windows-x86_64).
+Reason: simulator tests require macOS
+Solution: To suppress this warning, add 'kotlin.native.ignoreDisabledTargets=true' to gradle.properties.
+
+w: Default Kotlin Hierarchy Template Not Applied Correctly
+The Default Kotlin Hierarchy Template was not applied to 'project ':shared'':
+Explicit .dependsOn() edges were configured for the following source sets:
+[androidMain, iosArm64Main, iosMain, iosSimulatorArm64Main, jvmMain, jvmSharedMain]
+
+Consider removing dependsOn-calls or disabling the default template by adding
+    'kotlin.mpp.applyDefaultHierarchyTemplate=false'
+to your gradle.properties
+Solution: Please remove the dependsOn-calls or disable the default template.
+Learn more about hierarchy templates: https://kotl.in/hierarchy-template
+
+
+> Task :shared:kmpPartiallyResolvedDependenciesChecker
+> Task :shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :shared:downloadKotlinNativeDistribution
+
+> Task :shared:compileKotlinIosArm64
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:11:8 Unresolved reference 'org'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:12:8 Unresolved reference 'org'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:75:80 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:77:30 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:91:82 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:103:15 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:105:30 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:123:45 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:123:65 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:125:30 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:145:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:156:107 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:158:30 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:183:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:189:75 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:190:48 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:191:20 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:191:34 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:192:30 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:193:18 Unresolved reference 'optInt'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:195:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:197:19 Unresolved reference 'optBoolean'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:198:28 Unresolved reference 'optString'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:198:45 Cannot infer type for type parameter 'C'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:198:45 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:201:31 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:203:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:205:23 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:224:15 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:237:15 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:254:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:257:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:259:20 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:259:34 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:260:30 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:261:19 Unresolved reference 'optBoolean'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:264:28 Unresolved reference 'optString'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:265:18 Cannot infer type for type parameter 'C'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:265:18 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:265:33 Unresolved reference 'optString'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:270:31 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:272:27 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:274:23 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:347:24 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:347:37 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:347:54 Unresolved reference 'optJSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:347:101 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:350:24 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:350:37 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:350:54 Unresolved reference 'optJSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:350:78 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:353:25 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:353:38 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:354:26 Unresolved reference 'opt'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:356:20 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:357:20 Unresolved reference 'JSONObject'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:357:36 Unresolved reference 'optJSONArray' on receiver of type 'Any'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:357:60 Unresolved reference 'JSONArray'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/data/capture/School.kt:358:25 Unresolved reference 'JSONArray'.
+
+> Task :shared:compileKotlinIosArm64 FAILED
+
+[Incubating] Problems report is available at: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':shared:compileKotlinIosArm64'.
+> Compilation finished with errors
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 13s
+3 actionable tasks: 3 executed

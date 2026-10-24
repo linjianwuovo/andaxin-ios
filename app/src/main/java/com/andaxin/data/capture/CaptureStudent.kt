@@ -6,7 +6,7 @@ import com.andaxin.data.brief.DetailSource
 import com.andaxin.data.brief.Flag
 import com.andaxin.data.brief.ListSource
 import com.andaxin.core.store.SessionStore
-import org.json.JSONObject
+import com.andaxin.core.json.JSONObject
 
 /*
  * 劳动教育工时 与 节假日离返校登记。

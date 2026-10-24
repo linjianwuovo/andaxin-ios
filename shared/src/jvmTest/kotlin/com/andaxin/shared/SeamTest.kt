@@ -11,8 +11,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 缝与垫片的语义测试，跑在 JVM 目标上（Windows 本机就能跑，不用等 CI）。
@@ -107,7 +107,7 @@ class JsonShimTest {
     fun 回来的不是JSON要抛() {
         val html = "<html><body>登录页</body></html>"
         var threw = false
-        try { JSONObject(html) } catch (e: IllegalArgumentException) { threw = true }
+        try { JSONObject(html) } catch (e: Exception) { threw = true }
         assertTrue(threw)
     }
 

@@ -6,8 +6,8 @@ import com.andaxin.data.brief.BriefRow
 import com.andaxin.data.brief.DetailSource
 import com.andaxin.data.brief.Flag
 import com.andaxin.data.brief.ListSource
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 成绩与素质学分：这两块的实样是 10-19 深夜那一轮抓包里现打的，字段照实样来。

@@ -1,6 +1,4 @@
-@file:Suppress("unused")
-
-package org.json
+package com.andaxin.core.json
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -11,62 +9,15 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /*
- * org.json 兼容垫片（非 Android 目标专用）。
- *
- * 为什么存在：data/capture 那 40 来个文件满地是 JSONObject/JSONArray，而 org.json 官方
- * 只发 JVM jar（2026-10-24 探针实测）。Android 端继续用平台自带那份，行为零变化；
- * iOS/JVM 走这份垫片，kotlinx-serialization 做 backend。
- *
- * 覆盖面 = 全仓实测用到的 16 个方法（约 870 处调用）：put、optString、optInt、optLong、
- * optDouble、optBoolean、optJSONObject、optJSONArray、getString、getInt、getJSONObject、
- * getJSONArray、has、remove、keys、length、toString、join。
- * 不在覆盖面里的方法不要用——用到了编译就报错，正好逼着补。
- *
- * 与 org.json 的已知差异（都无害，记在这儿防翻旧账）：
+ * org.json 兼容垫片 —— iOS 的 actual（契约见 commonMain 那份 expect）。
+ * kotlinx-serialization 做 backend。Android/JVM 用的是真 org.json 的 typealias，
+ * 所以这份的差异只在 iOS 生效，两条已知无害差异：
  * 1. 数字原样保留字面量："1.00" 解出来 optString 是 "1.00"（org.json 会归一成 "1"）；
  *    显示层要的是服务端原话，这个更忠。
  * 2. toString 不把 "/" 转义成 "\/"（org.json 会）；两者是等价 JSON，服务端都认。
- * 3. 解析失败抛 IllegalArgumentException（org.json 抛 JSONException）——调用方全是
- *    runCatching 包着，不区分这个。
  */
 
 private val LENIENT = Json { isLenient = true; ignoreUnknownKeys = true }
-
-/** org.json 那个带 indentFactor 的缩进打印口径：每层缩 indentFactor 格，空容器单行。 */
-internal fun jsonPretty(el: JsonElement, indentFactor: Int): String {
-    val sb = StringBuilder()
-    fun pad(level: Int) { repeat(indentFactor * level) { sb.append(' ') } }
-    fun walk(e: JsonElement, level: Int) {
-        when (e) {
-            is JsonObject -> {
-                if (e.isEmpty()) { sb.append("{}"); return }
-                sb.append("{\n")
-                e.entries.forEachIndexed { i, (k, v) ->
-                    pad(level + 1)
-                    sb.append(JsonPrimitive(k)).append(": ")
-                    walk(v, level + 1)
-                    if (i != e.size - 1) sb.append(',')
-                    sb.append('\n')
-                }
-                pad(level); sb.append('}')
-            }
-            is JsonArray -> {
-                if (e.isEmpty()) { sb.append("[]"); return }
-                sb.append("[\n")
-                e.forEachIndexed { i, v ->
-                    pad(level + 1)
-                    walk(v, level + 1)
-                    if (i != e.size - 1) sb.append(',')
-                    sb.append('\n')
-                }
-                pad(level); sb.append(']')
-            }
-            else -> sb.append(e.toString())
-        }
-    }
-    walk(el, 0)
-    return sb.toString()
-}
 
 internal fun parseElement(text: String): JsonElement = LENIENT.parseToJsonElement(text)
 
@@ -122,6 +73,42 @@ internal fun JsonElement?.coerceBoolean(default: Boolean): Boolean = when (this)
     else -> default
 }
 
+/** org.json 那个带 indentFactor 的缩进打印口径：每层缩 indentFactor 格，空容器单行。 */
+internal fun jsonPretty(el: JsonElement, indentFactor: Int): String {
+    val sb = StringBuilder()
+    fun pad(level: Int) { repeat(indentFactor * level) { sb.append(' ') } }
+    fun walk(e: JsonElement, level: Int) {
+        when (e) {
+            is JsonObject -> {
+                if (e.isEmpty()) { sb.append("{}"); return }
+                sb.append("{\n")
+                e.entries.forEachIndexed { i, (k, v) ->
+                    pad(level + 1)
+                    sb.append(JsonPrimitive(k)).append(": ")
+                    walk(v, level + 1)
+                    if (i != e.size - 1) sb.append(',')
+                    sb.append('\n')
+                }
+                pad(level); sb.append('}')
+            }
+            is JsonArray -> {
+                if (e.isEmpty()) { sb.append("[]"); return }
+                sb.append("[\n")
+                e.forEachIndexed { i, v ->
+                    pad(level + 1)
+                    walk(v, level + 1)
+                    if (i != e.size - 1) sb.append(',')
+                    sb.append('\n')
+                }
+                pad(level); sb.append(']')
+            }
+            else -> sb.append(e.toString())
+        }
+    }
+    walk(el, 0)
+    return sb.toString()
+}
+
 class JSONObject {
 
     internal val map = LinkedHashMap<String, JsonElement>()
@@ -144,7 +131,7 @@ class JSONObject {
 
     fun isNull(name: String): Boolean = map[name] is JsonNull
 
-    fun opt(name: String): Any? = map[name].toKotlin()
+    fun opt(name: String): Any? { val v = map[name]; return if (v is JsonNull) NULL else v.toKotlin() }
 
     fun optString(name: String, default: String): String =
         map[name]?.let { if (it is JsonNull) default else it.coerceString().ifEmpty { default } } ?: default
@@ -184,9 +171,15 @@ class JSONObject {
             ?: throw IllegalArgumentException("JSONObject[$name] 不是数字")
     }
 
+    fun getDouble(name: String): Double {
+        val v = map[name]
+        if (v == null || v is JsonNull || v !is kotlinx.serialization.json.JsonPrimitive) throw IllegalArgumentException("JSONObject[name] 不是数字")
+        return v.content.trim().toDoubleOrNull() ?: throw IllegalArgumentException("JSONObject[name] 不是数字")
+    }
+
     /** 返回 this 便于链式；value 为 null = 移除该键（org.json 的口径）。 */
     fun put(name: String, value: Any?): JSONObject {
-        if (value == null) map.remove(name) else map[name] = value.toJsonElement()
+        if (value === NULL) map[name] = JsonNull else if (value == null) map.remove(name) else map[name] = value.toJsonElement()
         return this
     }
 
@@ -200,4 +193,9 @@ class JSONObject {
 
     fun toString(indentFactor: Int): String =
         if (indentFactor <= 0) toString() else jsonPretty(JsonObject(map), indentFactor)
+
+    companion object {
+        /** org.json 的 NULL 哨兵：put(NULL) = 显式存 null（不是删键）；opt 取回的也是它。 */
+        val NULL: Any = Any()
+    }
 }

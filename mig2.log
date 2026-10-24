@@ -1,0 +1,61 @@
+
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Configure project :shared
+w: Native task 'iosSimulatorArm64Test' is disabled
+Task 'iosSimulatorArm64Test' for target 'ios_simulator_arm64' cannot run on the current host (windows-x86_64).
+Reason: simulator tests require macOS
+Solution: To suppress this warning, add 'kotlin.native.ignoreDisabledTargets=true' to gradle.properties.
+
+w: Default Kotlin Hierarchy Template Not Applied Correctly
+The Default Kotlin Hierarchy Template was not applied to 'project ':shared'':
+Explicit .dependsOn() edges were configured for the following source sets:
+[androidMain, iosArm64Main, iosMain, iosSimulatorArm64Main, jvmMain, jvmSharedMain]
+
+Consider removing dependsOn-calls or disabling the default template by adding
+    'kotlin.mpp.applyDefaultHierarchyTemplate=false'
+to your gradle.properties
+Solution: Please remove the dependsOn-calls or disable the default template.
+Learn more about hierarchy templates: https://kotl.in/hierarchy-template
+
+
+> Task :shared:kmpPartiallyResolvedDependenciesChecker
+> Task :shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :shared:downloadKotlinNativeDistribution UP-TO-DATE
+
+> Task :shared:compileKotlinIosArm64
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/org/json/JsonExpect.kt:9:1 'expect'/'actual' classes (including interfaces, objects, annotations, enums, and 'actual' typealiases) are in Beta. Consider using the '-Xexpect-actual-classes' flag to suppress this warning. Also see: https://youtrack.jetbrains.com/issue/KT-61573
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/org/json/JsonExpect.kt:40:1 'expect'/'actual' classes (including interfaces, objects, annotations, enums, and 'actual' typealiases) are in Beta. Consider using the '-Xexpect-actual-classes' flag to suppress this warning. Also see: https://youtrack.jetbrains.com/issue/KT-61573
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/iosMain/kotlin/org/json/JSONArray.kt:10:1 'expect'/'actual' classes (including interfaces, objects, annotations, enums, and 'actual' typealiases) are in Beta. Consider using the '-Xexpect-actual-classes' flag to suppress this warning. Also see: https://youtrack.jetbrains.com/issue/KT-61573
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/iosMain/kotlin/org/json/JSONObject.kt:112:1 'expect'/'actual' classes (including interfaces, objects, annotations, enums, and 'actual' typealiases) are in Beta. Consider using the '-Xexpect-actual-classes' flag to suppress this warning. Also see: https://youtrack.jetbrains.com/issue/KT-61573
+
+> Task :shared:compileKotlinJvm
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/core/store/Store.kt:13:16 Unresolved reference 'io'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/core/store/Store.kt:32:18 Unresolved reference 'IOException'.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/jvmSharedMain/kotlin/org/json/JsonAliases.kt:8:31 Recursive type alias in expansion.
+e: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/jvmSharedMain/kotlin/org/json/JsonAliases.kt:10:30 Recursive type alias in expansion.
+
+> Task :shared:compileKotlinJvm FAILED
+
+[Incubating] Problems report is available at: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':shared:compileKotlinJvm'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Kotlin compiler: UNRESOLVED_IMPORT
+       Kotlin compiler error
+         Unresolved reference 'io'.
+         Location: C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/shared/src/commonMain/kotlin/com/andaxin/core/store/Store.kt line 13
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 31s
+4 actionable tasks: 3 executed, 1 up-to-date

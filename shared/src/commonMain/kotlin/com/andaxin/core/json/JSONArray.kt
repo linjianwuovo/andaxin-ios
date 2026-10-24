@@ -1,6 +1,4 @@
-@file:Suppress("unused")
-
-package org.json
+package com.andaxin.core.json
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -8,7 +6,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** 见 JSONObject.kt 文件头：org.json 兼容垫片的数组那一半，覆盖面同样是全仓实测用到的方法。 */
+/** org.json 兼容垫片的数组那一半（iOS actual），口径说明见 JSONObject.kt 文件头。 */
 class JSONArray {
 
     private val list = ArrayList<JsonElement>()
@@ -50,9 +48,14 @@ class JSONArray {
 
     fun optLong(index: Int, default: Long): Long = list.getOrNull(index).coerceLong(default)
 
+    fun optLong(index: Int): Long = optLong(index, 0L)
+
     fun optDouble(index: Int, default: Double): Double = list.getOrNull(index).coerceDouble(default)
 
+    fun optDouble(index: Int): Double = optDouble(index, 0.0)
+
     fun optBoolean(index: Int, default: Boolean): Boolean = list.getOrNull(index).coerceBoolean(default)
+
     fun optBoolean(index: Int): Boolean = optBoolean(index, false)
 
     fun getJSONObject(index: Int): JSONObject = optJSONObject(index) ?: throw IllegalArgumentException("JSONArray[$index] 不是对象")

@@ -1,6 +1,5 @@
 package com.andaxin.data.capture
 
-import androidx.compose.runtime.Immutable
 import com.andaxin.core.net.Crypto
 import com.andaxin.core.net.Http
 import java.util.concurrent.TimeUnit
@@ -8,7 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
-import org.json.JSONObject
+import com.andaxin.core.json.JSONObject
 
 /**
  * 登录与刷新 token。
@@ -30,15 +29,6 @@ import org.json.JSONObject
 
 const val AUTH_BASE = "https://in.aiit.edu.cn/zhxy-information"
 
-@Immutable
-data class TokenBundle(
-    val accessToken: String,
-    val refreshToken: String,
-    val userCode: String,
-    val userName: String,
-    val userType: String,
-    val expiresInSeconds: Long,
-)
 
 /**
  * 登录这一类失败的两种结局，必须分开 —— 因为它决定「记住的那份口令还要不要留」。

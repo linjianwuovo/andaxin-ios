@@ -7,7 +7,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
-import org.json.JSONObject
+import com.andaxin.core.json.JSONObject
 
 /*
  * 安大信自己的检测更新。

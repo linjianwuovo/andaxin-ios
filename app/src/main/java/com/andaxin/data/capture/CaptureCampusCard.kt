@@ -19,8 +19,8 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 校园卡（第三方：新开普 17wanxiao）。

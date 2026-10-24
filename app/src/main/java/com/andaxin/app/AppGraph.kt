@@ -84,7 +84,14 @@ import com.andaxin.data.capture.CaptureDormTaskDetail
  */
 class AppGraph(val context: Context) {
 
-    val store: Store by lazy { Store(context) }
+    /** 应用私有目录的具名文件（快照、第三方 token、跑步路线），实现来自共享层的 AppFiles。 */
+    private val files = com.andaxin.core.store.ContextFiles(context)
+
+    // 平移注：Store 进共享层了，路径必须指到老 preferencesDataStore(name="andaxin")
+    // 一直在写的同一份文件，用户数据（登录态、设置）原样续用。
+    val store: Store by lazy {
+        Store(context.filesDir.resolve("datastore/andaxin.preferences_pb").absolutePath)
+    }
 
     /** 关于页那颗「查一次」：读我们自己那个 GitHub 仓的 release，不带任何凭据。 */
     val updates by lazy { com.andaxin.data.capture.UpdateFeed() }
@@ -109,7 +116,7 @@ class AppGraph(val context: Context) {
     /** token 到点前换成新的，换不动就请回登录页并带上原因 */
     /** 「记住密码」那把不可导出的 AES 密钥。构造失败也不该影响启动，所以是 lazy。 */
     val vault: com.andaxin.core.store.KeystoreVault by lazy {
-        com.andaxin.core.store.KeystoreVault(context)
+        com.andaxin.core.store.KeystoreVault()
     }
 
     val keepAlive: TokenKeepAlive by lazy {
@@ -154,8 +161,8 @@ class AppGraph(val context: Context) {
         // 未读数走 messages 这一路（跟消息屏同一个来源），不再用 notReadCount 那个 count —— 见 DashboardSource
         DashboardSource(
             school, session, LocalDashboard(messages, timetable), timetable, ywlz, messages, sports, dormBoard,
-            readSnap = { com.andaxin.core.store.Snap.read(context, "home") },
-            writeSnap = { com.andaxin.core.store.Snap.write(context, "home", it) },
+            readSnap = { com.andaxin.core.store.Snap.read(files, "home") },
+            writeSnap = { com.andaxin.core.store.Snap.write(files, "home", it) },
         )
     }
 

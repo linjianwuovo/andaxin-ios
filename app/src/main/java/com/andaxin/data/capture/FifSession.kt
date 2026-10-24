@@ -17,7 +17,7 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
+import com.andaxin.core.json.JSONObject
 
 /*
  * AI 课堂那套（FIF 平台）的会话层。

@@ -1,7 +1,7 @@
 package com.andaxin.data.capture
 
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * FIF（AI 课堂平台）的业务接口层。

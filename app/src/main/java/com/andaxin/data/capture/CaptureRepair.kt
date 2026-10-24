@@ -8,7 +8,7 @@ import com.andaxin.data.brief.Flag
 import com.andaxin.data.brief.ListSource
 import com.andaxin.data.brief.Prompt
 import com.andaxin.data.brief.PromptGroup
-import org.json.JSONObject
+import com.andaxin.core.json.JSONObject
 
 /*
  * 报修（我的报修单 / 单据详情 / 流程轨迹）。
@@ -248,7 +248,7 @@ class CaptureRepairDetail(private val school: School) : DetailSource {
         val SCORE = mapOf("非常满意" to "1", "满意" to "2", "一般" to "3", "不满意" to "4")
     }
 
-    private fun hasNested(flow: org.json.JSONArray): Boolean =
+    private fun hasNested(flow: com.andaxin.core.json.JSONArray): Boolean =
         (0 until flow.length()).any { flow.optJSONObject(it)?.optJSONArray("list")?.length() ?: 0 > 0 }
 
     /**

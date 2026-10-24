@@ -93,7 +93,7 @@ class DashboardSource(
 
     override fun cached(): Dashboard? = readSnap()?.let { text ->
         runCatching {
-            val o = org.json.JSONObject(text)
+            val o = com.andaxin.core.json.JSONObject(text)
             /*
              * 快照里必须带"是哪一天"。10-21 13:3x 他打开首页，顶卡写着"下一节 高等数学 10:25–11:10"，
              * 而那节课 12:00 就上完了 —— 垫屏的是**昨天/上一趟**留下的那份，里面没有时间戳，
@@ -191,16 +191,16 @@ class DashboardSource(
             // 落一份给下次冷启动垫屏用（只存首页这几个数，不存任何身份/单据）
             runCatching {
                 writeSnap(
-                    org.json.JSONObject()
+                    com.andaxin.core.json.JSONObject()
                         .put("day", todayKey())
                         .put("greeting", dash.greeting)
-                        .put("todayLessons", dash.todayLessons ?: org.json.JSONObject.NULL)
-                        .put("nextLesson", dash.nextLesson ?: org.json.JSONObject.NULL)
+                        .put("todayLessons", dash.todayLessons ?: com.andaxin.core.json.JSONObject.NULL)
+                        .put("nextLesson", dash.nextLesson ?: com.andaxin.core.json.JSONObject.NULL)
                         .put("unreadMessages", dash.unreadMessages)
                         .put("dormCheckState", dash.dormCheckState)
-                        .put("runSemesterKm", dash.runSemesterKm ?: org.json.JSONObject.NULL)
-                        .put("runMorningKm", dash.runMorningKm ?: org.json.JSONObject.NULL)
-                        .put("runWhy", dash.runWhy ?: org.json.JSONObject.NULL)
+                        .put("runSemesterKm", dash.runSemesterKm ?: com.andaxin.core.json.JSONObject.NULL)
+                        .put("runMorningKm", dash.runMorningKm ?: com.andaxin.core.json.JSONObject.NULL)
+                        .put("runWhy", dash.runWhy ?: com.andaxin.core.json.JSONObject.NULL)
                         .toString(),
                 )
             }

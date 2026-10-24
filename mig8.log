@@ -1,0 +1,131 @@
+
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Configure project :shared
+w: Native task 'iosSimulatorArm64Test' is disabled
+Task 'iosSimulatorArm64Test' for target 'ios_simulator_arm64' cannot run on the current host (windows-x86_64).
+Reason: simulator tests require macOS
+Solution: To suppress this warning, add 'kotlin.native.ignoreDisabledTargets=true' to gradle.properties.
+
+w: Default Kotlin Hierarchy Template Not Applied Correctly
+The Default Kotlin Hierarchy Template was not applied to 'project ':shared'':
+Explicit .dependsOn() edges were configured for the following source sets:
+[androidMain, iosArm64Main, iosMain, iosSimulatorArm64Main, jvmMain, jvmSharedMain, logicMain]
+
+Consider removing dependsOn-calls or disabling the default template by adding
+    'kotlin.mpp.applyDefaultHierarchyTemplate=false'
+to your gradle.properties
+Solution: Please remove the dependsOn-calls or disable the default template.
+Learn more about hierarchy templates: https://kotl.in/hierarchy-template
+
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preStableReleaseBuild UP-TO-DATE
+> Task :app:mergeStableReleaseJniLibFolders UP-TO-DATE
+> Task :shared:androidPreBuild UP-TO-DATE
+> Task :shared:preAndroidMainBuild UP-TO-DATE
+> Task :shared:mergeAndroidMainJniLibFolders UP-TO-DATE
+> Task :shared:mergeAndroidMainNativeLibs NO-SOURCE
+> Task :shared:copyAndroidMainJniLibsProjectOnly UP-TO-DATE
+> Task :app:mergeStableReleaseNativeLibs UP-TO-DATE
+> Task :app:stripStableReleaseDebugSymbols UP-TO-DATE
+> Task :app:extractStableReleaseNativeSymbolTables UP-TO-DATE
+> Task :app:mergeStableReleaseNativeDebugMetadata NO-SOURCE
+> Task :shared:kmpPartiallyResolvedDependenciesChecker
+> Task :shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:checkStableReleaseDuplicateClasses UP-TO-DATE
+> Task :app:generateStableReleaseBuildConfig UP-TO-DATE
+> Task :app:generateStableReleaseResources UP-TO-DATE
+> Task :app:packageStableReleaseResources UP-TO-DATE
+> Task :shared:generateAndroidMainEmptyResourceFiles UP-TO-DATE
+> Task :app:processStableReleaseNavigationResources UP-TO-DATE
+> Task :app:parseStableReleaseLocalResources UP-TO-DATE
+> Task :app:generateStableReleaseRFile UP-TO-DATE
+> Task :app:javaPreCompileStableRelease UP-TO-DATE
+> Task :shared:prepareAndroidMainArtProfile UP-TO-DATE
+> Task :app:mergeStableReleaseArtProfile UP-TO-DATE
+> Task :shared:writeAndroidMainAarMetadata UP-TO-DATE
+> Task :app:checkStableReleaseAarMetadata UP-TO-DATE
+> Task :app:mapStableReleaseSourceSetPaths UP-TO-DATE
+> Task :app:compileStableReleaseNavigationResources UP-TO-DATE
+> Task :app:mergeStableReleaseResources UP-TO-DATE
+> Task :app:createStableReleaseCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksStableRelease UP-TO-DATE
+> Task :shared:processAndroidMainManifest UP-TO-DATE
+> Task :app:processStableReleaseMainManifest UP-TO-DATE
+> Task :app:processStableReleaseManifest UP-TO-DATE
+> Task :app:processStableReleaseManifestForPackage UP-TO-DATE
+> Task :app:processStableReleaseResources UP-TO-DATE
+> Task :app:extractProguardFiles UP-TO-DATE
+> Task :app:mergeStableReleaseStartupProfile UP-TO-DATE
+> Task :app:generateStableReleaseAssets UP-TO-DATE
+> Task :app:mergeStableReleaseAssets UP-TO-DATE
+> Task :app:compressStableReleaseAssets UP-TO-DATE
+> Task :app:extractStableReleaseVersionControlInfo UP-TO-DATE
+> Task :shared:prepareLintJarForPublish UP-TO-DATE
+> Task :shared:checkAndroidMainAarMetadata UP-TO-DATE
+> Task :shared:extractAndroidMainAnnotations UP-TO-DATE
+> Task :app:collectStableReleaseDependencies UP-TO-DATE
+> Task :app:sdkStableReleaseDependencyData UP-TO-DATE
+> Task :app:validateSigningStableRelease UP-TO-DATE
+> Task :app:writeStableReleaseAppMetadata UP-TO-DATE
+> Task :app:writeStableReleaseSigningConfigVersions UP-TO-DATE
+> Task :shared:downloadKotlinNativeDistribution UP-TO-DATE
+> Task :shared:compileAndroidMain
+> Task :shared:compileKotlinIosArm64
+> Task :shared:processAndroidMainJavaRes UP-TO-DATE
+> Task :shared:mergeAndroidMainJavaResource UP-TO-DATE
+> Task :shared:bundleAndroidMainClassesToRuntimeJar
+> Task :shared:bundleAndroidMainClassesToCompileJar
+> Task :shared:syncAndroidMainLibJars
+> Task :shared:createFullJarAndroidMain
+> Task :shared:bundleAndroidMainLocalLintAar
+> Task :shared:jvmProcessResources NO-SOURCE
+> Task :shared:processJvmMainResources SKIPPED
+> Task :shared:jvmTestProcessResources NO-SOURCE
+> Task :shared:processJvmTestResources SKIPPED
+> Task :shared:compileKotlinJvm
+> Task :shared:compileJvmMainJava NO-SOURCE
+> Task :shared:jvmMainClasses
+> Task :shared:jvmJar
+> Task :shared:compileTestKotlinJvm
+> Task :shared:compileJvmTestJava NO-SOURCE
+> Task :shared:jvmTestClasses
+> Task :shared:jvmTest
+
+> Task :app:compileStableReleaseKotlin
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/core/store/TokenKeepAlive.kt:135:60 Elvis operator (?:) always returns the left operand of non-nullable type 'String'.
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/data/capture/CaptureScps.kt:97:13 Expression is unused.
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/data/capture/UpdateFeed.kt:90:56 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Release'.
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/feature/aiclass/ScanScreen.kt:218:20 'fun resume(value: ProcessCameraProvider?, onCancellation: ((Throwable) -> Unit)?): Unit' is deprecated. Use the overload that also accepts the `value` and the coroutine context in lambda.
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/feature/me/MeScreen.kt:184:39 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Profile'.
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/feature/me/MeScreen.kt:184:62 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Profile'.
+w: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/app/src/main/java/com/andaxin/feature/me/MeScreen.kt:184:83 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Profile'.
+
+> Task :app:compileStableReleaseJavaWithJavac
+> Task :app:mergeStableReleaseGeneratedProguardFiles
+> Task :app:processStableReleaseJavaRes
+> Task :app:expandStableReleaseArtProfileWildcards
+> Task :app:generateStableReleaseLintVitalReportModel
+> Task :app:produceStableReleaseComposeMapping
+> Task :app:reportStableReleaseComposeMappingErrors
+> Task :app:mergeStableReleaseJavaResource
+> Task :app:lintVitalAnalyzeStableRelease
+> Task :app:minifyStableReleaseWithR8
+> Task :app:lintVitalReportStableRelease
+> Task :app:lintVitalStableRelease
+> Task :app:mergeStableReleaseComposeMapping
+> Task :app:compileStableReleaseArtProfile
+> Task :app:convertShrunkResourcesToBinaryStableRelease
+> Task :app:optimizeStableReleaseResources
+> Task :app:packageStableRelease
+> Task :app:createStableReleaseApkListingFileRedirect
+> Task :app:assembleStableRelease
+
+[Incubating] Problems report is available at: file:///C:/Users/linjianwu/Documents/Qoder/2026-09-28/e5703bf8/andaxin/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 3m 6s
+76 actionable tasks: 31 executed, 45 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.3.1/userguide/configuration_cache_enabling.html

@@ -1,7 +1,7 @@
 package com.andaxin.data.capture
 
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 班级群与班内名单（`zhxy-new-scps/im/` 那一族）。

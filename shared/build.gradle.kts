@@ -49,22 +49,31 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
+                // Store 用的 DataStore 多平台内核；文件路径由调用方给（Android 是 filesDir/datastore 那份老文件）
+                implementation(libs.datastore.preferences.core)
             }
         }
 
-        // 自建两条中间链（默认层级只在同类目标≥2 时才建 iosMain 这种中间集，这里手动接）：
+        // 中间源集（默认层级在同类目标只有 1 个时不建中间集，手动接）：
         //   jvmSharedMain：android+jvm 共用（OkHttp 引擎、Dispatchers.IO）
-        //   nonAndroidMain：ios+jvm 共用（org.json 垫片）
-        //   iosMain：挂在 nonAndroidMain 下，iosArm64Main 再挂它
+        //   iosMain：org.json 垫片 + Ktor 依赖
+        //   logicMain：业务逻辑层（Session/Snap/School/TokenBundle）。放这里不放 commonMain，
+        //     是因为它们 import org.json —— commonMain 的元数据编译看不见平台物；
+        //     logicMain 只在三个目标的编译里出现，org.json 各自从 SDK（Android）/ jar（JVM）/
+        //     垫片源码（iOS）来，三端一行不改。
         val jvmSharedMain by creating { dependsOn(commonMain.get()) }
-        val nonAndroidMain by creating { dependsOn(commonMain.get()) }
-        val iosMain by creating { dependsOn(nonAndroidMain) }
+        val iosMain by creating { dependsOn(commonMain.get()) }
+        val logicMain by creating { dependsOn(commonMain.get()) }
 
-        androidMain { dependsOn(jvmSharedMain) }
+        androidMain {
+            dependsOn(jvmSharedMain)
+            dependsOn(logicMain)
+        }
         jvmMain {
             dependsOn(jvmSharedMain)
-            dependsOn(nonAndroidMain)
+            dependsOn(logicMain)
         }
+        iosMain.dependsOn(logicMain)
         iosArm64Main { dependsOn(iosMain) }
         iosSimulatorArm64Main { dependsOn(iosMain) }
 

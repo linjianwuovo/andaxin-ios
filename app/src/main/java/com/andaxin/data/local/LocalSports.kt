@@ -12,8 +12,8 @@ import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /**
  * 运动的占位源。记录是排版用的假数据，只负责在校方接口拉不到时撑住版面。

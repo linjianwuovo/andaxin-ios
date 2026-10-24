@@ -6,8 +6,8 @@ import java.security.KeyFactory
 import java.security.spec.X509EncodedKeySpec
 import java.util.Locale
 import javax.crypto.Cipher
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /**
  * 跑步上传那条 `list` 字段的拼包。

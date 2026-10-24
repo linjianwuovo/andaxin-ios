@@ -20,8 +20,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.math.roundToInt
 import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 校方那台运动（`sports.aiit.edu.cn:8082`）的读侧：总量、记录列表、维护申请列表。
@@ -463,7 +463,7 @@ class CaptureSports(
         }
     }
 
-    private fun reason(root: org.json.JSONObject): String =
+    private fun reason(root: com.andaxin.core.json.JSONObject): String =
         root.optString("msg")
             .ifBlank { root.optString("result") }
             .ifBlank { "校方说没通过" }

@@ -1,21 +1,15 @@
 package com.andaxin.data.capture
 
-import com.andaxin.core.net.Http
+import com.andaxin.core.net.HttpBody
+import com.andaxin.core.net.HttpCall
+import com.andaxin.core.net.HttpEngine
+import com.andaxin.core.net.HttpEngineConfig
+import com.andaxin.core.net.createHttpEngine
+import com.andaxin.core.net.formUrlEncode
 import com.andaxin.core.store.SchoolIdentity
 import com.andaxin.core.store.SessionStore
-import java.io.File
-import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /**
  * 校方业务接口的公共外壳：身份参数怎么带、表单怎么发、JSON 怎么钻。
@@ -40,6 +34,10 @@ import org.json.JSONObject
  * `kkxn=2026&kkxq=1&userCode=<学号>` 回 1 条；再补一个 `userCode` 就回 0 条。
  * 身份那七个字段单独加哪个都不影响，两次编码的名字也不影响。
  * 所以 `form()` 里做了去重：调用方自己给了同名参数，身份那份就让开。
+ *
+ * 平移注（2026-10-24）：底层从直用 OkHttp 换成共享层那台 HttpEngine（Android 端实际还是
+ * 同一台 OkHttp 池、同样的超时与表单顺序，报文路径不变）；`postFile` 的参数从 File
+ * 换成 bytes+fileName（commonMain 没有 java.io.File），调用方照改。
  */
 class School(private val session: SessionStore) {
 
@@ -57,10 +55,12 @@ class School(private val session: SessionStore) {
 
     fun consumeKicked() { _kicked.value = false }
 
-    private val client = Http.client.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val engine: HttpEngine = createHttpEngine(
+        HttpEngineConfig(
+            connectTimeoutMs = 15_000,
+            readTimeoutMs = 20_000,
+        ),
+    )
 
     /** 当前会话的学号。没登录给空串，调用方自己决定要不要发。 */
     suspend fun userCode(): String = session.identity()?.userCode.orEmpty()
@@ -123,99 +123,86 @@ class School(private val session: SessionStore) {
     suspend fun postJson(url: String, body: JSONObject): Result<JSONObject> {
         val id = session.identity()
             ?: return Result.failure(Exception("还没登录，这一屏要校方数据"))
-        return withContext(Dispatchers.IO) {
-            val request = Request.Builder().url(url)
-                .post(body.toString().toRequestBody(JSON_TYPE))
-                .header("Accept", "application/json")
-                .header("User-Agent", AGENT)
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("accessToken", id.accessToken)
-                .header("userCode", id.userCode)
-                .header("userType", id.userType)
-                .header("xh", id.userCode)
-                .header("role", "")
-                .header("roleId", "")
-                .build()
-            try {
-                client.newCall(request).execute().use { resp ->
-                    val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) return@use Result.failure(Exception("服务器回了 ${resp.code}"))
-                    val root = runCatching { JSONObject(text) }.getOrNull()
-                        ?: return@use Result.failure(Exception("回来的不是 JSON（多半是被踢到登录页了）"))
-                    if (root.optInt("code") == 203) {
-                        _kicked.value = true
-                        return@use Result.failure(Exception(KICKED))
-                    }
-                    if (!root.optBoolean("flag", false)) {
-                        val msg = root.optString("msg").ifBlank { "校方说没通过" }
-                        if (msg.contains("没有访问权限")) {
-                            _kicked.value = true
-                            return@use Result.failure(Exception(KICKED))
-                        }
-                        return@use Result.failure(Exception(msg))
-                    }
-                    Result.success(root)
-                }
-            } catch (e: Exception) {
-                Result.failure(Exception("连不上学校：${e.message ?: e.javaClass.simpleName}"))
-            }
+        val reply = runCatching {
+            engine.execute(
+                HttpCall(
+                    url = url,
+                    headers = listOf(
+                        "Accept" to "application/json",
+                        "User-Agent" to AGENT,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "accessToken" to id.accessToken,
+                        "userCode" to id.userCode,
+                        "userType" to id.userType,
+                        "xh" to id.userCode,
+                        "role" to "",
+                        "roleId" to "",
+                    ),
+                    body = HttpBody.Text(body.toString(), "application/json; charset=utf-8"),
+                ),
+            )
+        }.getOrElse { e ->
+            return Result.failure(Exception("连不上学校：${e.message ?: e::class.simpleName}"))
         }
+        return parseFdygl(reply)
     }
 
     /**
      * fdygl 的图片上传。旧项目走的是这条路：
      * `POST /app/file/uploadFileToFastdfs`，multipart 的字段名就是 `file`，
      * 身份仍放请求头（和 [postJson] 同一套），响应里的 `data.path` 回填签到表的 `signinPhoto`。
+     * 平移注：参数从 File 换成 bytes+fileName，Mime 按 extension 判断的口径不变。
      */
-    suspend fun postFile(url: String, file: File, field: String = "file"): Result<JSONObject> {
+    suspend fun postFile(url: String, bytes: ByteArray, fileName: String, field: String = "file"): Result<JSONObject> {
         val id = session.identity()
             ?: return Result.failure(Exception("还没登录，这一屏要校方数据"))
-        val media = when (file.extension.lowercase()) {
+        val mime = when (fileName.substringAfterLast('.', "").lowercase()) {
             "png" -> "image/png"
             "webp" -> "image/webp"
             else -> "image/jpeg"
-        }.toMediaType()
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart(field, file.name, file.asRequestBody(media))
-            .build()
-        return withContext(Dispatchers.IO) {
-            val request = Request.Builder().url(url)
-                .post(body)
-                .header("Accept", "application/json")
-                .header("User-Agent", AGENT)
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("accessToken", id.accessToken)
-                .header("userCode", id.userCode)
-                .header("userType", id.userType)
-                .header("xh", id.userCode)
-                .header("role", "")
-                .header("roleId", "")
-                .build()
-            try {
-                client.newCall(request).execute().use { resp ->
-                    val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) return@use Result.failure(Exception("服务器回了 ${resp.code}"))
-                    val root = runCatching { JSONObject(text) }.getOrNull()
-                        ?: return@use Result.failure(Exception("回来的不是 JSON（多半是被踢到登录页了）"))
-                    if (root.optInt("code") == 203) {
-                        _kicked.value = true
-                        return@use Result.failure(Exception(KICKED))
-                    }
-                    if (!root.optBoolean("flag", false)) {
-                        val msg = root.optString("msg").ifBlank { "照片没传上去" }
-                        if (msg.contains("没有访问权限")) {
-                            _kicked.value = true
-                            return@use Result.failure(Exception(KICKED))
-                        }
-                        return@use Result.failure(Exception(msg))
-                    }
-                    Result.success(root)
-                }
-            } catch (e: Exception) {
-                Result.failure(Exception("连不上学校：${e.message ?: e.javaClass.simpleName}"))
-            }
         }
+        val reply = runCatching {
+            engine.execute(
+                HttpCall(
+                    url = url,
+                    headers = listOf(
+                        "Accept" to "application/json",
+                        "User-Agent" to AGENT,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "accessToken" to id.accessToken,
+                        "userCode" to id.userCode,
+                        "userType" to id.userType,
+                        "xh" to id.userCode,
+                        "role" to "",
+                        "roleId" to "",
+                    ),
+                    body = HttpBody.Upload(field, fileName, mime, bytes),
+                ),
+            )
+        }.getOrElse { e ->
+            return Result.failure(Exception("连不上学校：${e.message ?: e::class.simpleName}"))
+        }
+        return parseFdygl(reply)
+    }
+
+    /** fdygl 那一族共用的信封判断（code=203 踢回 / flag:false 带 msg，见 postJson 取证）。 */
+    private fun parseFdygl(reply: com.andaxin.core.net.HttpReply): Result<JSONObject> {
+        if (!reply.isSuccessful) return Result.failure(Exception("服务器回了 ${reply.status}"))
+        val root = runCatching { JSONObject(reply.bodyText) }.getOrNull()
+            ?: return Result.failure(Exception("回来的不是 JSON（多半是被踢到登录页了）"))
+        if (root.optInt("code") == 203) {
+            _kicked.value = true
+            return Result.failure(Exception(KICKED))
+        }
+        if (!root.optBoolean("flag", false)) {
+            val msg = root.optString("msg").ifBlank { "校方说没通过" }
+            if (msg.contains("没有访问权限")) {
+                _kicked.value = true
+                return Result.failure(Exception(KICKED))
+            }
+            return Result.failure(Exception(msg))
+        }
+        return Result.success(root)
     }
 
     /**
@@ -234,7 +221,7 @@ class School(private val session: SessionStore) {
         url: String,
         fields: List<Pair<String, String>>,
         vararg headers: Pair<String, String>,
-    ): Result<JSONObject> = withContext(Dispatchers.IO) { send(url, fields, headers = headers.toList()) }
+    ): Result<JSONObject> = send(url, fields, headers = headers.toList())
 
     /** 同一个键只留调用方那一份（见类注释第四个坑）。 */
     private fun dedupe(identity: List<Pair<String, String>>, extra: List<Pair<String, String>>): List<Pair<String, String>> {
@@ -247,45 +234,45 @@ class School(private val session: SessionStore) {
         pairs: List<Pair<String, String>>,
         timeoutMs: Long? = null,
         headers: List<Pair<String, String>> = emptyList(),
-    ) = withContext(Dispatchers.IO) {
-        val form = FormBody.Builder().apply { pairs.forEach { (k, v) -> add(k, v) } }.build()
-        val request = Request.Builder().url(url).post(form)
-            .header("Accept", "application/json")
-            .header("User-Agent", AGENT)
-            .apply { headers.forEach { (k, v) -> header(k, v) } }
-            .build()
-            // 单发限时：整个客户端的读超时是 20 秒，那一档是给"课表、成绩这种真在算的"留的。
-            // 有些口（`process/getForm.do`）校方现在给到 46 秒还只回 214 字节 ——
-            // 跟着 20 秒等，就是详情白屏 20 秒换几行没有的字段。这种口自己报一个短得多的数。
-            val call = client.newCall(request)
-            if (timeoutMs != null) call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
-            try {
-                call.execute().use { resp ->
-                    val body = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) {
-                        return@use Result.failure(Exception("服务器回了 ${resp.code}"))
-                    }
-                    val root = runCatching { JSONObject(body) }.getOrNull()
-                        ?: return@use Result.failure(Exception("回来的不是 JSON（多半是会话过期被踢到登录页）"))
-                    if (!root.optBoolean("flag", false)) {
-                        // in.aiit 那一族把原因放 `msg`，ywlz 那一族放 `result`（实测回过"非法访问"）。
-                        // 两处都看，都没有才说"没通过"，别自己编一句。
-                        val msg = root.optString("msg")
-                            .ifBlank { root.optString("result") }
-                            .ifBlank { "校方说没通过" }
-                        if (msg.contains("没有访问权限") || msg == YWLZ_DENIED) {
-                            // 顶号是会话级的事，一次命中就该整体认，别每屏各报各的
-                            _kicked.value = true
-                            return@use Result.failure(Exception(KICKED))
-                        }
-                        return@use Result.failure(Exception(msg))
-                    }
-                    Result.success(root)
-                }
-            } catch (e: Exception) {
-                Result.failure(Exception("连不上学校：${e.message ?: e.javaClass.simpleName}"))
-            }
+    ): Result<JSONObject> {
+        // 单发限时：整个客户端的读超时是 20 秒，那一档是给"课表、成绩这种真在算的"留的。
+        // 有些口（`process/getForm.do`）校方现在给到 46 秒还只回 214 字节 ——
+        // 跟着 20 秒等，就是详情白屏 20 秒换几行没有的字段。这种口自己报一个短得多的数。
+        val reply = runCatching {
+            engine.execute(
+                HttpCall(
+                    url = url,
+                    headers = listOf(
+                        "Accept" to "application/json",
+                        "User-Agent" to AGENT,
+                    ) + headers,
+                    body = HttpBody.Form(pairs),
+                ),
+                timeoutMs = timeoutMs,
+            )
+        }.getOrElse { e ->
+            return Result.failure(Exception("连不上学校：${e.message ?: e::class.simpleName}"))
         }
+        if (!reply.isSuccessful) {
+            return Result.failure(Exception("服务器回了 ${reply.status}"))
+        }
+        val root = runCatching { JSONObject(reply.bodyText) }.getOrNull()
+            ?: return Result.failure(Exception("回来的不是 JSON（多半是会话过期被踢到登录页）"))
+        if (!root.optBoolean("flag", false)) {
+            // in.aiit 那一族把原因放 `msg`，ywlz 那一族放 `result`（实测回过"非法访问"）。
+            // 两处都看，都没有才说"没通过"，别自己编一句。
+            val msg = root.optString("msg")
+                .ifBlank { root.optString("result") }
+                .ifBlank { "校方说没通过" }
+            if (msg.contains("没有访问权限") || msg == YWLZ_DENIED) {
+                // 顶号是会话级的事，一次命中就该整体认，别每屏各报各的
+                _kicked.value = true
+                return Result.failure(Exception(KICKED))
+            }
+            return Result.failure(Exception(msg))
+        }
+        return Result.success(root)
+    }
 
     companion object {
         /** 被顶号时统一给这一句，界面上和到期那句要能分开。 */
@@ -307,9 +294,6 @@ class School(private val session: SessionStore) {
 
         /** 安小信自己那圈调用用的就是 okhttp 默认串，跟着它，别自造一个。 */
         const val AGENT = "okhttp/4.9.3"
-
-        /** fdygl 那一族要 JSON 体（见 `postJson`），MediaType 只造一次。 */
-        val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
 
         /** 32 个 1，抓包里每条都带。 */
         const val APP_ID = "11111111111111111111111111111111"
@@ -357,7 +341,7 @@ class School(private val session: SessionStore) {
         )
 
         fun enc(s: String): String =
-            if (s.isEmpty()) "" else runCatching { URLEncoder.encode(s, "UTF-8") }.getOrDefault(s)
+            if (s.isEmpty()) "" else runCatching { formUrlEncode(s) }.getOrDefault(s)
 
         /** 分页壳：`data.data` 才是数组。拿不到就回空数组，不抛。 */
         fun page(root: JSONObject): JSONArray = root.optJSONObject("data")?.optJSONArray("data") ?: JSONArray()

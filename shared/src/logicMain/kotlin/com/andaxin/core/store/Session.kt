@@ -1,6 +1,6 @@
 package com.andaxin.core.store
 
-import androidx.compose.runtime.Immutable
+import com.andaxin.core.concurrency.nowMillis
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.map
  *
  * 到点续期不在这里做，在 `TokenKeepAlive`：这一层只管存和读。
  */
-@Immutable
 data class Session(
     val onboarded: Boolean = false,
     val loggedIn: Boolean = false,
@@ -50,7 +49,6 @@ data class Session(
  * 都是"从服务入口进去的那一侧"；App 外壳自己那 15 条全是 1。
  * 我们这边所有口都照登录响应原样带 1，目前条条回得来数据，**别跟着改成 2**。
  */
-@Immutable
 data class SchoolIdentity(
     val accessToken: String,
     val userCode: String,
@@ -94,9 +92,9 @@ class SessionStore(private val store: Store) {
             Store.KEY_USER_CODE to token.userCode,
             KEY_USER_NAME to token.userName,
             KEY_USER_TYPE to token.userType,
-            KEY_EXPIRES_AT to (System.currentTimeMillis() / 1000 + token.expiresInSeconds).toString(),
+            KEY_EXPIRES_AT to (nowMillis() / 1000 + token.expiresInSeconds).toString(),
             KEY_BROWSING to null,
-            KEY_GEN to System.currentTimeMillis().toString(),
+            KEY_GEN to nowMillis().toString(),
         )
     }
 
@@ -127,7 +125,7 @@ class SessionStore(private val store: Store) {
     /** 还剩不到两小时就算过期（学校给 8 小时） */
     suspend fun tokenExpired(): Boolean {
         val until = store.peekString(store.snapshot(), KEY_EXPIRES_AT)?.toLongOrNull() ?: return true
-        return System.currentTimeMillis() / 1000 >= until - 7200
+        return nowMillis() / 1000 >= until - 7200
     }
 
     suspend fun agreeTerms() = store.setText(KEY_ONBOARDED, "1")

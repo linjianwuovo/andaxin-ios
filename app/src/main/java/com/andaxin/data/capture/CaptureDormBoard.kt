@@ -6,8 +6,8 @@ import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 查寝那一屏的数据：月概览 + 签到月历 + 当天任务（查寝 / 主题签到两节）。
@@ -247,7 +247,7 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
 
     /** 先传图，再把 `data.path` 填进签到表的 `signinPhoto`。 */
     suspend fun uploadPhoto(file: File): Result<String> {
-        val root = school.postFile("$FDY/app/file/uploadFileToFastdfs", file).getOrElse {
+        val root = school.postFile("$FDY/app/file/uploadFileToFastdfs", file.readBytes(), file.name).getOrElse {
             return Result.failure(it)
         }
         val data = root.opt("data")

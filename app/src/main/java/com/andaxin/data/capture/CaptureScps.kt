@@ -10,8 +10,8 @@ import com.andaxin.data.NoticeItem
 import com.andaxin.data.TimetableFeed
 import com.andaxin.data.TimetableSlot
 import com.andaxin.data.WeekTable
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 这三个是 2026-10-19 那批抓包里证据最厚的三块，形状照实样来，一条都不猜。
@@ -224,7 +224,7 @@ class CaptureNotices(private val school: School) : NoticeFeed {
         }
 
     /** 图片优先用服务端自己算好的 `urlList`，没有再退回从 HTML 里抠 `<img src>`。 */
-    private fun imagesOf(d: org.json.JSONObject): List<String> {
+    private fun imagesOf(d: com.andaxin.core.json.JSONObject): List<String> {
         val arr = d.optJSONArray("urlList")
         if (arr != null) {
             val direct = (0 until arr.length()).map { arr.optString(it) }.filter { it.startsWith("http") }

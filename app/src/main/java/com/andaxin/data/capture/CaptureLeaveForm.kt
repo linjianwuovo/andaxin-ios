@@ -4,8 +4,8 @@ import com.andaxin.core.store.SessionStore
 import com.andaxin.data.brief.Field
 import com.andaxin.data.brief.FormSource
 import com.andaxin.data.brief.FormSpec
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -228,8 +228,8 @@ class CaptureLeaveForm(
                     val s = "$model.start"; val e = "$model.end"
                     formats[model] = f
                     pairs[model] = s to e
-                    out.add(Field.Text(s, rng.optString(0).ifBlank { "${label}·开始" }, hint = example(f)))
-                    out.add(Field.Text(e, rng.optString(1).ifBlank { "${label}·结束" }, hint = example(f)))
+                    out.add(Field.Text(s, rng?.optString(0).orEmpty().ifBlank { "${label}·开始" }, hint = example(f)))
+                    out.add(Field.Text(e, rng?.optString(1).orEmpty().ifBlank { "${label}·结束" }, hint = example(f)))
                     register(type, null)
                 }
                 // formula 是算出来的，不给人填：值由它引用的那条 dateRange 求小时差（§1.6 formula[] 元素带 model）

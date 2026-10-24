@@ -3,8 +3,8 @@ package com.andaxin.data.capture
 import com.andaxin.data.brief.Field
 import com.andaxin.data.brief.FormSource
 import com.andaxin.data.brief.FormSpec
-import org.json.JSONArray
-import org.json.JSONObject
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
 
 /*
  * 新建报修那张表：**下拉的可选值是校方字典给的**，不是我们在代码里列的五个词。

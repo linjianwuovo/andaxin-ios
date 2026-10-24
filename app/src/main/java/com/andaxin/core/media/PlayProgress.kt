@@ -3,7 +3,7 @@ package com.andaxin.core.media
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import com.andaxin.core.json.JSONObject
 
 /**
  * 录播看到第几分 —— 存在本机。
