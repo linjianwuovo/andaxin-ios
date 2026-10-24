@@ -1,13 +1,14 @@
 package com.andaxin.data.capture
 
 import com.andaxin.core.store.SessionStore
-import java.io.File
-import java.time.LocalDate
-import java.util.Locale
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
+import kotlinx.datetime.minus
+
 
 /*
  * 查寝那一屏的数据：月概览 + 签到月历 + 当天任务（查寝 / 主题签到两节）。
@@ -63,7 +64,7 @@ data class DormTask(
     val creator: String,
     val unit: String,
 ) {
-    val isToday: Boolean get() = date == LocalDate.now().toString()
+    val isToday: Boolean get() = date == com.andaxin.core.concurrency.todayLocalDate().toString()
 }
 
 /**
@@ -113,12 +114,12 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
      * 一次拉四发（概览、月历、查寝任务、主题签到任务），任何一发挂了都不拖垮整屏：
      * 概览挂了界面说"统计没拿到"，任务挂了说任务没拿到，各说各的。
      */
-    suspend fun load(date: LocalDate = LocalDate.now()): Result<DormBoard> {
+    suspend fun load(date: LocalDate = com.andaxin.core.concurrency.todayLocalDate()): Result<DormBoard> {
         val code = session.identity()?.userCode.orEmpty()
         if (code.isBlank()) return Result.failure(Exception("还没登录，这一屏要校方数据"))
-        val month = "%04d-%02d".format(date.year, date.monthValue)
-        val first = date.withDayOfMonth(1).toString()
-        val last = date.withDayOfMonth(date.lengthOfMonth()).toString()
+        val month = date.year.toString().padStart(4, '0') + "-" + date.monthNumber.toString().padStart(2, '0')
+        val first = LocalDate(date.year, date.monthNumber, 1).toString()
+        val last = LocalDate(date.year, date.monthNumber, 1).plus(1, kotlinx.datetime.DateTimeUnit.MONTH).minus(kotlinx.datetime.DatePeriod(days = 1)).toString()
         return coroutineScope {
             val statics = async {
                 school.postJson(
@@ -181,7 +182,7 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
     suspend fun nextTask(): DormTask? {
         val code = session.identity()?.userCode.orEmpty()
         if (code.isBlank()) return null
-        val today = LocalDate.now().toString()
+        val today = com.andaxin.core.concurrency.todayLocalDate().toString()
         return page("/app/dorm/pageStudentSignIn", code, "3")
             .filter { it.date >= today }
             .minByOrNull { it.date + it.startAt }
@@ -246,8 +247,8 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
     }
 
     /** 先传图，再把 `data.path` 填进签到表的 `signinPhoto`。 */
-    suspend fun uploadPhoto(file: File): Result<String> {
-        val root = school.postFile("$FDY/app/file/uploadFileToFastdfs", file.readBytes(), file.name).getOrElse {
+    suspend fun uploadPhoto(bytes: ByteArray, fileName: String): Result<String> {
+        val root = school.postFile("$FDY/app/file/uploadFileToFastdfs", bytes, fileName).getOrElse {
             return Result.failure(it)
         }
         val data = root.opt("data")
@@ -277,7 +278,7 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
             .put("taskDateId", dateId)
             .put("signinPhoto", photoUrl)
             .put("signinPlace", place)
-            .put("latLng", String.format(Locale.US, "%.6f,%.6f", bdLng, bdLat))
+            .put("latLng", com.andaxin.core.text.fixed(bdLng, 6) + "," + com.andaxin.core.text.fixed(bdLat, 6))
             .put("outSignin", "0")
             .put("outSigninDesc", "")
         school.postJson("$FDY/app/dorm/signIn", body).getOrElse { return Result.failure(it) }

@@ -1,15 +1,15 @@
 package com.andaxin.data.capture
 
+import kotlin.concurrent.Volatile
+import com.andaxin.core.concurrency.hoursBetweenLDT
+import com.andaxin.core.concurrency.parsePatternTime
+import com.andaxin.core.concurrency.formatPatternTime
 import com.andaxin.core.store.SessionStore
 import com.andaxin.data.brief.Field
 import com.andaxin.data.brief.FormSource
 import com.andaxin.data.brief.FormSpec
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 /*
  * 发起请假那张**动态表单**，以及真往学校发那一发。
@@ -312,20 +312,20 @@ class CaptureLeaveForm(
                         ?: return Result.failure(Exception("${label}的开始时间格式不对，要像 ${example(f)}"))
                     val b = parseTime(values[ek].orEmpty(), f)
                         ?: return Result.failure(Exception("${label}的结束时间格式不对，要像 ${example(f)}"))
-                    if (b.isBefore(a)) return Result.failure(Exception("${label}：结束时间不能早于开始时间"))
+                    if (b < a) return Result.failure(Exception("${label}：结束时间不能早于开始时间"))
                     json.put(m, JSONArray().put(fmt(values[sk].orEmpty(), f)).put(fmt(values[ek].orEmpty(), f)))
                 }
                 "formula" -> {
                     val ref = s.formulaRef[m]
                     val pair = ref?.let { s.pairs[it] }
-                    val a = pair?.first?.let { parseTime(values[it].orEmpty(), s.formats[ref].orEmpty()) }
-                    val b = pair?.second?.let { parseTime(values[it].orEmpty(), s.formats[ref].orEmpty()) }
-                    if (a == null || b == null || b.isBefore(a)) {
+                    val a = pair?.first?.let { parsePatternTime(values[it].orEmpty()) }
+                    val b = pair?.second?.let { parsePatternTime(values[it].orEmpty()) }
+                    if (a == null || b == null || b < a) {
                         // 宁可不发，也不交一个 0 小时的数过去 —— 旧仓那版给 0，学校照收，
                         // 收进去就是一张"时长 0"的单，比报错坏得多
                         return Result.failure(Exception("${label}算不出来：先把它上面那行起止时间填对"))
                     }
-                    json.put(m, ChronoUnit.HOURS.between(a, b))
+                    json.put(m, hoursBetweenLDT(a, b))
                 }
                 "address" -> {
                     val v = values[m].orEmpty().trim()
@@ -380,21 +380,13 @@ private fun example(f: String): String =
     if (f.contains("HH")) "2026-10-25 08:30" else "2026-10-25"
 
 /** 只有日期没有时分的写法按 00:00 起算；两种都能读出来，读不出来回 null。 */
-private fun parseTime(text: String, f: String): LocalDateTime? {
-    val t = text.trim()
-    if (t.isEmpty()) return null
-    val p = javaPattern(f)
-    runCatching { return LocalDateTime.parse(t, DateTimeFormatter.ofPattern(p)) }.getOrNull()
-    return runCatching { LocalDate.parse(t, DateTimeFormatter.ofPattern("yyyy-MM-dd")).atStartOfDay() }.getOrNull()
-}
+private fun parseTime(text: String, f: String): kotlinx.datetime.LocalDateTime? = parsePatternTime(text)
 
 /** 发出去的时间串按它自己的格式回写一遍，把人随手打的多余空格和"10-25"这类补全。 */
 private fun fmt(text: String, f: String): String {
     val t = text.trim()
-    val p = javaPattern(f)
-    return runCatching {
-        LocalDateTime.parse(t, DateTimeFormatter.ofPattern(p)).format(DateTimeFormatter.ofPattern(p))
-    }.getOrDefault(t)
+    val parsed = parsePatternTime(t) ?: return t
+    return formatPatternTime(parsed, f.contains("HH"))
 }
 
 /** 登录了走校方那张动态表，没登录才回占位 —— 和列表/详情同一个规矩。 */

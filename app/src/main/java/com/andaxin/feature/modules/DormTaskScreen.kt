@@ -190,7 +190,7 @@ fun DormTaskScreen(dateId: String, onBack: () -> Unit) {
                     submitting = false
                     return@launch
                 }
-                val r = graph.dormBoard.uploadPhoto(file)
+                val r = graph.dormBoard.uploadPhoto(file.readBytes(), file.name)
                 r.fold(
                     onSuccess = { photoUrl = it },
                     onFailure = {

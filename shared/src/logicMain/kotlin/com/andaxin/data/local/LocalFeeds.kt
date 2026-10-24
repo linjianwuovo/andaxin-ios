@@ -78,10 +78,10 @@ class LocalDashboard(
     override suspend fun snapshot(): Result<Dashboard> {
         val unread = messages.page(0).getOrDefault(emptyList()).count { it.unread }
         val lessons = timetable.week(0).getOrDefault(emptyList())
-            .count { it.day == com.andaxin.core.schedule.Periods.today() }
+            .count { it.day == com.andaxin.core.concurrency.todayDayOfWeek() }
         return Result.success(
             Dashboard(
-                greeting = greetAt(java.time.LocalTime.now().hour),
+                greeting = greetAt(com.andaxin.core.concurrency.currentHour()),
                 todayLessons = lessons,
                 nextLesson = "第 3 节 · 大学英语 · 教二 111",
                 unreadMessages = unread,
