@@ -1,13 +1,14 @@
 package com.andaxin.data.capture
 
-import com.andaxin.core.net.Http
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.Request
+import com.andaxin.core.net.HttpCall
+import com.andaxin.core.net.HttpEngine
+import com.andaxin.core.net.HttpEngineConfig
+import com.andaxin.core.net.createHttpEngine
 import com.andaxin.core.json.JSONObject
+import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /*
  * 安大信自己的检测更新。
@@ -53,23 +54,24 @@ class UpdateFeed {
      * @param beta 这台机器装的是不是 beta 那条线 —— 是就只看带 `-beta` 的 tag，
      *             不然正式版会一直提示"有新版"，而那个新版其实是调试线。
      */
-    suspend fun check(current: String, beta: Boolean): Result<UpdateCheck> = withContext(Dispatchers.IO) {
-        val req = Request.Builder().url(ATOM).header("User-Agent", UA).get().build()
+    suspend fun check(current: String, beta: Boolean): Result<UpdateCheck> {
+        val engine = createHttpEngine(HttpEngineConfig())
         val text = try {
-            Http.client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    return@withContext Result.failure(
-                        Exception(
-                            if (resp.code == 404) "GitHub 上读不到这个仓的 release（仓刚转公开？）"
-                            else "GitHub 回了 ${resp.code}",
-                        ),
-                    )
-                }
-                resp.body?.string().orEmpty()
+            val resp = engine.execute(
+                HttpCall(method = "GET", url = ATOM, headers = listOf("User-Agent" to UA)),
+            )
+            if (!resp.isSuccessful) {
+                return Result.failure(
+                    Exception(
+                        if (resp.status == 404) "GitHub 上读不到这个仓的 release（仓刚转公开？）"
+                        else "GitHub 回了 ${resp.status}",
+                    ),
+                )
             }
+            resp.bodyText
         } catch (e: Exception) {
-            return@withContext Result.failure(
-                Exception("连不上 GitHub：${e.message ?: e.javaClass.simpleName}（这台机现在到得了 github.com 吗）"),
+            return Result.failure(
+                Exception("连不上 GitHub：" + (e.message ?: e::class.simpleName) + "（这台机现在到得了 github.com 吗）"),
             )
         }
         var best: Release? = null
@@ -90,8 +92,8 @@ class UpdateFeed {
             if (best == null || compare(r.version, best!!.version) > 0) best = r
         }
         val found = best
-            ?: return@withContext Result.failure(Exception("订阅里没找到这条线的 release（beta 线还没发过版？）"))
-        Result.success(UpdateCheck(found, compare(found.version, plainOf(current)) > 0, now()))
+            ?: return Result.failure(Exception("订阅里没找到这条线的 release（beta 线还没发过版？）"))
+        return Result.success(UpdateCheck(found, compare(found.version, plainOf(current)) > 0, now()))
     }
 
     /** `0.8.9` 要比 `0.8.27` 小 —— 按段比数字，不是比字符串。 */
@@ -105,7 +107,7 @@ class UpdateFeed {
         return 0
     }
 
-    private fun now(): String = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
+    private fun now(): String = hhmm(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()))
 
     private companion object {
         const val BASE = "https://github.com/linjianwuovo/andaxin"
@@ -118,6 +120,12 @@ class UpdateFeed {
         val ENTRY_DATE = Regex("<updated>(.*?)</updated>")
     }
 }
+
+private fun hhmm(t: LocalDateTime): String =
+    (if (t.monthNumber < 10) "0" else "") + t.monthNumber + "-" +
+        (if (t.dayOfMonth < 10) "0" else "") + t.dayOfMonth + " " +
+        (if (t.hour < 10) "0" else "") + t.hour + ":" +
+        (if (t.minute < 10) "0" else "") + t.minute
 
 /** 版本名去掉 `-beta` 尾巴；界面上比"是不是同一版"用这个。 */
 fun plainOf(v: String): String = v.removeSuffix("-beta").trim()
