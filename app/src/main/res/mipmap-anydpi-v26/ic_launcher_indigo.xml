@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动图标 · 靛底青杠。桌面那枚由对应的 activity-alias 引这一份。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_bg_indigo" />
+    <foreground android:drawable="@drawable/ic_launcher_fg_indigo" />
+    <monochrome android:drawable="@drawable/ic_launcher_fg_indigo" />
+</adaptive-icon>

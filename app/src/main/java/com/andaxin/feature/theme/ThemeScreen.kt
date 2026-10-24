@@ -1,5 +1,6 @@
 package com.andaxin.feature.theme
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +21,12 @@ import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +50,8 @@ import com.andaxin.core.design.Gap
 import com.andaxin.core.design.Type
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Radius
+import com.andaxin.core.launcher.LauncherIcon
+import com.andaxin.core.launcher.LauncherIcons
 import com.andaxin.core.settings.Appearance
 import com.andaxin.core.settings.BarMaterial
 import com.andaxin.core.settings.DayNight
@@ -208,6 +216,10 @@ fun ThemeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         }
 
         Spacer(Modifier.height(Gap.xl))
+        GroupTitle("启动图标")
+        LauncherIconSection()
+
+        Spacer(Modifier.height(Gap.xl))
         GroupTitle("玻璃参数")
         Sheet {
             SliderRow("模糊度", draft.blur, commit) { draft = draft.copy(blur = it) }
@@ -222,6 +234,94 @@ fun ThemeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             )
         }
         Spacer(Modifier.height(Gap.xxl))
+    }
+}
+
+/**
+ * 「启动图标」那一格：七枚可选（现在那枚临时标记 + 六套尖顶 A 配色）。
+ *
+ * 点一下就换 —— 这一步动的是系统里的组件开关（见 core/launcher/LauncherIcons.kt），
+ * 不碰学校、不碰网络，所以没上连按两次；但失败一定把原因贴出来，不闷声。
+ */
+@Composable
+private fun LauncherIconSection() {
+    val ink = LocalInk.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var now by remember { mutableStateOf(LauncherIcons.current(ctx)) }
+    var why by remember { mutableStateOf<String?>(null) }
+
+    Sheet {
+        LauncherIcons.ALL.chunked(4).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(Gap.lg)) {
+                row.forEach { ic ->
+                    val on = ic.key == now.key
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.pressClick(shrink = false) {
+                            if (on) return@pressClick
+                            LauncherIcons.apply(ctx, ic).fold(
+                                onSuccess = {
+                                    now = ic
+                                    why = "已换上「${ic.label}」。桌面那枚一般马上变；" +
+                                        "个别 ROM 要回一次桌面才刷新。"
+                                },
+                                onFailure = { why = "没换成：${it.message ?: it.javaClass.simpleName}" },
+                            )
+                        },
+                    ) {
+                        IconPreview(ic, on)
+                        Spacer(Modifier.height(Gap.xs))
+                        Text(
+                            ic.label,
+                            fontSize = Type.tiny,
+                            color = if (on) ink.strong else ink.faint,
+                            fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Gap.md))
+        }
+        Text(
+            text = why ?: "换的不只是好看：桌面那枚和最近任务里那枚都会跟着变。",
+            fontSize = Type.micro,
+            color = if (why == null) ink.faint else ink.muted,
+            lineHeight = Type.metaLine,
+        )
+    }
+}
+
+/** 预览画的就是真图标那套几何（108 视口、同一批坐标），只是线画粗一点，小格子里才看得清。 */
+@Composable
+private fun IconPreview(ic: LauncherIcon, on: Boolean) {
+    val shape = RoundedCornerShape(15.dp)
+    Box(
+        Modifier
+            .size(58.dp)
+            .clip(shape)
+            .background(Color(ic.bg.toInt()))
+            .then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(58.dp)) {
+            val s = size.width / 108f
+            val line = Color(ic.ink.toInt())
+            val bar = Color(ic.bar.toInt())
+            if (ic.shape == "box") {
+                drawRoundRect(
+                    line,
+                    Offset(26f * s, 32f * s),
+                    Size(56f * s, 44f * s),
+                    CornerRadius(8f * s),
+                )
+                drawRect(bar, Offset(30f * s, 46f * s), Size(48f * s, 6f * s))
+            } else {
+                val w = 14f * s
+                drawLine(line, Offset(27.56f * s, 79.73f * s), Offset(54f * s, 27.79f * s), w, StrokeCap.Round)
+                drawLine(line, Offset(54f * s, 27.79f * s), Offset(78.47f * s, 79.73f * s), w, StrokeCap.Round)
+                drawLine(bar, Offset(40.5f * s, 59.9f * s), Offset(67.5f * s, 59.9f * s), w, StrokeCap.Round)
+            }
+        }
     }
 }
 
