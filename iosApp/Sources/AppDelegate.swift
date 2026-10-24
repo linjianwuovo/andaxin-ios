@@ -28,7 +28,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
         // signedIn() 挂起查 DataStore；launchMain 在主线程协程里回，直接切根是安全的
         g.launchMain { [weak self] in
-            let signed = g.session.signedIn()
+            // Kotlin 的 Boolean 过桥是 KotlinBoolean，.boolValue 才是 Swift 的 Bool
+            let signed = g.session.signedIn().boolValue
             if signed {
                 self?.window?.rootViewController = self?.makeTabs(g)
             } else {
