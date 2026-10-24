@@ -23,6 +23,10 @@ targets:
       - path: Sources
     info:
       path: Info.plist
+    dependencies:
+      # 固定路径的静态 framework：脚本相位在每次构建前按 SDK/配置把对应 flavor
+      # 拷到这里替换（见 preBuildScripts），CI 在 xcodegen 之前会先放一份占位。
+      - framework: ../shared/build/xcodeFrameworks/shared.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.andaxin.ios
@@ -32,7 +36,15 @@ targets:
       - name: BuildSharedFramework
         script: |
           cd "$SRCROOT/.."
-          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+          T=iosArm64
+          FLAVOR=Release
+          DIR=releaseFramework
+          if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then T=iosSimulatorArm64; fi
+          if [ "$CONFIGURATION" = "Debug" ]; then FLAVOR=Debug; DIR=debugFramework; fi
+          ./gradlew ":shared:link${FLAVOR}Framework${T}" || exit 1
+          mkdir -p shared/build/xcodeFrameworks
+          rm -rf shared/build/xcodeFrameworks/shared.framework
+          cp -R "shared/build/bin/${T}/${DIR}/shared.framework" shared/build/xcodeFrameworks/shared.framework
 
 schemes:
   AndaXin:

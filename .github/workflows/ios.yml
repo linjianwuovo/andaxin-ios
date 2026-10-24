@@ -24,6 +24,11 @@ jobs:
       - name: 链真机 release framework（本机做不了的那步，在这出证据）
         run: ./gradlew :shared:linkReleaseFrameworkIosArm64 --console=plain
 
+      - name: 预置 framework 占位（xcodegen 生成时要能找到路径；对应 flavor 由脚本相位构建时替换）
+        run: |
+          mkdir -p shared/build/xcodeFrameworks
+          cp -R shared/build/bin/iosArm64/releaseFramework/shared.framework shared/build/xcodeFrameworks/shared.framework
+
       - name: 装 xcodegen / xcbeautify 并生成工程
         run: |
           brew install xcodegen xcbeautify

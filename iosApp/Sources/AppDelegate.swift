@@ -1,11 +1,10 @@
 import UIKit
+import shared
 
 /*
- * iOS 壳的入口。骨架第二版：这一版先不链 shared.framework ——
- * framework 本体在 CI 的「linkReleaseFrameworkIosArm64」那步已经真实产出（见产物），
- * 但怎么把它挂进 XcodeGen 生成的工程（先编 framework 再生成工程 + framework 依赖路径），
- * 留给下一版接线。这版先证三件事：工程能生成、app 能构建、模拟器能点亮。
- * framework 接上后，这里摆的那行字换成 platformName()（来自 shared）。
+ * iOS 壳的入口。framework 接线版：脚本相位按当前 SDK/配置把对应 flavor 的
+ * shared.framework 放到固定路径，工程静态引用它 —— 这行 platformName() 来自
+ * shared（NSProcessInfo 那发），模拟器里看到它就等于「Kotlin→iOS 链路全程通」。
  */
 
 @main
@@ -24,7 +23,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 17, weight: .medium)
-        label.text = "AndaXin · iOS 壳（骨架，未接 framework）"
+        label.text = "AndaXin · " + PlatformKt.platformName()
         vc.view.addSubview(label)
 
         window?.rootViewController = vc
