@@ -1,19 +1,17 @@
 name: ios
 
-# 骨架：还没在 GitHub 上真跑过——kmp 分支推上远端之前这个文件不会动。
-# 首跑预期要小改的位置：scheme 名、模拟器机型（iPhone 16 会不会在 runner 上）、
-# xcodebuild 那两组参数。跑通之后模拟器截屏就是"能点开"的证据，无签名 ipa 给
-# Sideloadly/爱思在 Windows 侧重签侧载。
+# 出包流水线（macOS runner，公开仓免费）。骨架第二版：
+#  - 先在 CI 上链真机 framework（Windows 上 KGP 跳过的那步，在这补上证据）
+#  - Xcode/模拟器那截仍是骨架，失败不会拦住 framework 产物上传
 
 on:
   push:
-    # 这个仓的默认线是 main（iOS 这条线推出去后就是它）；留着 kmp 是本机工作分支同名推送也能触发
     branches: [main, kmp]
   workflow_dispatch: {}
 
 jobs:
   build:
-    name: 模拟器出包 + 截屏 + 无签名 ipa
+    name: framework + 模拟器 + 无签名 ipa
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -23,15 +21,15 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Kotlin 先过一遍（klib 编译，和 xcodebuild 分开看好定位）
-        run: ./gradlew :shared:compileKotlinIosArm64 --console=plain
+      - name: 链真机 release framework（本机做不了的那步，在这出证据）
+        run: ./gradlew :shared:linkReleaseFrameworkIosArm64 --console=plain
 
-      - name: 装 xcodegen 并生成工程
+      - name: 装 xcodegen / xcbeautify 并生成工程
         run: |
-          brew install xcodegen
+          brew install xcodegen xcbeautify
           cd iosApp && xcodegen -s project.yml
 
-      - name: 模拟器构建（framework 由工程里那段 preBuildScript 现链）
+      - name: 模拟器构建（framework 由工程里那段 preBuildScript 按 SDK 现编现嵌）
         run: |
           set -o pipefail
           xcodebuild -project iosApp/AndaXin.xcodeproj \
@@ -66,10 +64,21 @@ jobs:
           zip -qry AndaXin-unsigned.ipa Payload
           unzip -l AndaXin-unsigned.ipa | head -5
 
+      - name: 打包 framework 产物
+        if: always()
+        run: |
+          if [ -d shared/build/bin/iosArm64/releaseFramework ]; then
+            zip -qry shared-framework.zip shared/build/bin/iosArm64/releaseFramework
+          else
+            echo "framework 目录不存在（链接那步没过？）"
+          fi
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ios-skeleton
+          name: ios-artifacts
           path: |
             iosApp/simulator-launch.png
             AndaXin-unsigned.ipa
+            shared-framework.zip
           if-no-files-found: warn

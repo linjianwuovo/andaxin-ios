@@ -25,7 +25,17 @@ kotlin {
 
     // 静态 framework：侧载链路（Sideloadly/爱思）重签时不用再处理嵌套 dylib。
     // baseName 定死 "shared"，iosApp 那个 Xcode 工程按这个名字挂依赖。
+    // 模拟器目标：CI 的截屏/点开验证要跑 arm64 模拟器，Xcode 那步会按 SDK 自己挑对应目标编。
     iosArm64() {
+        binaries {
+            framework {
+                baseName = "shared"
+                isStatic = true
+            }
+        }
+    }
+
+    iosSimulatorArm64() {
         binaries {
             framework {
                 baseName = "shared"
@@ -56,6 +66,7 @@ kotlin {
             dependsOn(nonAndroidMain)
         }
         iosArm64Main { dependsOn(iosMain) }
+        iosSimulatorArm64Main { dependsOn(iosMain) }
 
         androidMain.dependencies {
             implementation(libs.okhttp)

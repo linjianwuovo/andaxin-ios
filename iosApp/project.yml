@@ -1,6 +1,6 @@
 # XcodeGen 的工程描述：真正的 .xcodeproj 不进仓，在 CI（或以后的 Mac）上用
-# `xcodegen -s iosApp/project.yml` 现生成。这一份是骨架，还没在任何 macOS 上跑过，
-# 首跑大概率要小改（scheme 名、模拟器机型、脚本路径这三处最可能）。
+# `xcodegen -s iosApp/project.yml` 现生成。骨架，第二版：Info.plist 改真文件、补 scheme、
+# 脚本相位换成 Kotlin 官方那条 embedAndSign（按当前 SDK/架构自己挑 iosArm64 或模拟器目标编）。
 
 name: AndaXin
 options:
@@ -21,36 +21,25 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    info:
+      path: Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.andaxin.ios
         MARKETING_VERSION: "0.8.28"
         CURRENT_PROJECT_VERSION: "70"
-        GENERATE_INFOPLIST_FILE: "YES"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
-        # 跑量那台 sports.aiit.edu.cn:8082 是明文 http，ATS 按域名放行（对应 Android 那份
-        # network_security_config 只放行同一台的做法，别开全局 ArbitraryLoads）。
-        INFOPLIST_KEY_NSAppTransportSecurity: |
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict><key>NSExceptionDomains</key><dict>
-          <key>sports.aiit.edu.cn</key><dict>
-          <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
-          <key>NSIncludesSubdomains</key><true/>
-          </dict></dict></dict></plist>
-    dependencies:
-      # KMP 直集成：shared.framework 由下面那段 gradle 脚本按当前架构/配置现编现嵌，
-      # 仓里不存二进制。embedAndSignAppleFrameworkForXcode 是 Kotlin 官方那条任务，
-      # 静态 framework（shared/build.gradle.kts 里 isStatic=true）签名步骤是空转，无账号也能跑。
-      - framework:
-          path: ../shared/build/xcodeFrameworks/shared.xcframework
-          implicit: true
     preBuildScripts:
       - name: BuildSharedFramework
         script: |
           cd "$SRCROOT/.."
-          ./gradlew :shared:embedAndSignAppleFrameworkForXcode \
-            -Pkotlin.native.cocoapods.platform.iOS=unused \
-            "SYNCHRONOUS=$SYNCHRONOUS" || exit 1
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+schemes:
+  AndaXin:
+    build:
+      targets:
+        AndaXin: all
+    run:
+      config: Debug
+    archive:
+      config: Release
