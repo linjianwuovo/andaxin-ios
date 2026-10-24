@@ -1,11 +1,11 @@
 import UIKit
-import shared
 
 /*
- * iOS 壳的入口。骨架阶段它只做一件事：把 shared.framework 链起来、
- * 在屏上摆一行字（platformName() 那发来自 NSProcessInfo）——
- * 模拟器里能看到这行字，就证明"Kotlin 编到 iOS、装进 app、跑起来"整条链是通的。
- * 等 Compose 界面搬进 commonMain，这里换成 ComposeUIViewController，整块换掉。
+ * iOS 壳的入口。骨架第二版：这一版先不链 shared.framework ——
+ * framework 本体在 CI 的「linkReleaseFrameworkIosArm64」那步已经真实产出（见产物），
+ * 但怎么把它挂进 XcodeGen 生成的工程（先编 framework 再生成工程 + framework 依赖路径），
+ * 留给下一版接线。这版先证三件事：工程能生成、app 能构建、模拟器能点亮。
+ * framework 接上后，这里摆的那行字换成 platformName()（来自 shared）。
  */
 
 @main
@@ -24,7 +24,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 17, weight: .medium)
-        label.text = "AndaXin · " + PlatformKt.platformName()
+        label.text = "AndaXin · iOS 壳（骨架，未接 framework）"
         vc.view.addSubview(label)
 
         window?.rootViewController = vc
