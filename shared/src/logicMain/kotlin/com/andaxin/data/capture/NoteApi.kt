@@ -1,12 +1,5 @@
 package com.andaxin.data.capture
 
-import com.andaxin.core.net.Http
-import java.io.IOException
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.Request
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
 
@@ -91,47 +84,49 @@ class NoteApi(private val fif: FifSession) {
     /** 一次 POST，两层都判：HTTP 码不算判据（失败会给 500），只看信封 `status == 1`。 */
     private suspend fun post(path: String, vararg fields: Pair<String, String>): Result<JSONObject> {
         val jwt = fif.authHeader() ?: return Result.failure(Exception("笔记站要先有 FIF 登录态"))
-        return withContext(Dispatchers.IO) {
-            val form = FormBody.Builder().apply {
-                fields.forEach { (k, v) -> add(k, v) }
-            }.build()
-            val req = Request.Builder().url("$BASE$path").post(form)
-                .header("User-Agent", UA)
-                .header("Accept", "application/json, text/plain, */*")
-                .header("Authorization", jwt)
-                .header("Origin", BASE.trimEnd('/'))
-                .header("Referer", REFERER)
-                .header("FIF-Accept-Version", "1.0")
-                .build()
-            try {
-                client.newCall(req).execute().use { resp ->
-                    val text = resp.body?.string().orEmpty()
-                    val root = runCatching { JSONObject(text) }.getOrNull()
-                        ?: return@use Result.failure(
-                            Exception("笔记站回的不是 JSON（HTTP ${resp.code}，多半是网关那层挂了）"),
-                        )
-                    // 注意是 int 的 status：1 = 成功，0 = 失败。主站那套 "success" 字符串在这儿不适用
-                    if (root.optInt("status", -1) != 1) {
-                        return@use Result.failure(
-                            Exception("笔记站：" + root.optString("message")
-                                .ifBlank { "HTTP ${resp.code}，服务端没给原因" }),
-                        )
-                    }
-                    Result.success(root)
-                }
-            } catch (e: IOException) {
-                Result.failure(Exception("连不上笔记站：${e.message ?: e.javaClass.simpleName}"))
+        val reply = runCatching {
+            engine.execute(
+                com.andaxin.core.net.HttpCall(
+                    url = "$BASE$path",
+                    headers = listOf(
+                        "User-Agent" to UA,
+                        "Accept" to "application/json, text/plain, */*",
+                        "Authorization" to jwt,
+                        "Origin" to BASE.trimEnd('/'),
+                        "Referer" to REFERER,
+                        "FIF-Accept-Version" to "1.0",
+                    ),
+                    body = com.andaxin.core.net.HttpBody.Form(fields.toList()),
+                ),
+            )
+        }
+        return try {
+            val resp = reply.getOrThrow()
+            val text = resp.bodyText
+            val root = runCatching { JSONObject(text) }.getOrNull()
+                ?: return Result.failure(
+                    Exception("笔记站回的不是 JSON（HTTP ${resp.status}，多半是网关那一层挂了）"),
+                )
+            // 注意是 int 的 status：1 = 成功，0 = 失败。主站那套 "success" 字符串在这儿不适用
+            if (root.optInt("status", -1) != 1) {
+                Result.failure(
+                    Exception("笔记站：" + root.optString("message")
+                        .ifBlank { "HTTP ${resp.status}，服务端没给原因" }),
+                )
+            } else {
+                Result.success(root)
             }
+        } catch (e: Exception) {
+            Result.failure(Exception("连不上笔记站：" + (e.message ?: e::class.simpleName)))
         }
     }
 
     private fun firstOf(o: JSONObject, vararg keys: String): String =
         keys.firstNotNullOfOrNull { o.optString(it).takeIf { v -> v.isNotBlank() } }.orEmpty()
 
-    private val client = Http.client.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val engine = com.andaxin.core.net.createHttpEngine(
+        com.andaxin.core.net.HttpEngineConfig(connectTimeoutMs = 15_000, readTimeoutMs = 20_000),
+    )
 
     private companion object {
         const val BASE = "https://note.fifedu.com/note-app-api/"

@@ -51,6 +51,8 @@ kotlin {
                 implementation(libs.kotlinx.serialization.json)
                 // Store 用的 DataStore 多平台内核；文件路径由调用方给（Android 是 filesDir/datastore 那份老文件）
                 implementation(libs.datastore.preferences.core)
+                // 日期：java.time 的多平台替身（CaptureYwlz 的 LocalDate、之后请假表单那批全靠它）
+                implementation(libs.kotlinx.datetime)
             }
         }
 

@@ -1,5 +1,6 @@
 package com.andaxin.data.capture
 
+import kotlinx.datetime.toLocalDateTime
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
 
@@ -811,7 +812,7 @@ class FifApi(private val fif: FifSession) {
         const val STTP = "https://sttp.fifedu.com"
         const val RESC = "https://resc.fifedu.com"
 
-        fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
+        fun enc(s: String): String = com.andaxin.core.net.formUrlEncode(s)
 
         /** 有的口 `data` 是对象（里面再挂 dataList），有的直接就是数组。两种都吃。 */
         fun data(root: JSONObject): JSONObject = root.optJSONObject("data") ?: JSONObject()
@@ -833,9 +834,9 @@ class FifApi(private val fif: FifSession) {
 
         fun sizeOf(bytes: Long): String = when {
             bytes <= 0 -> ""
-            bytes > 1L shl 30 -> "%.1f GB".format(bytes / 1073741824.0)
-            bytes > 1L shl 20 -> "%.0f MB".format(bytes / 1048576.0)
-            else -> "%.0f KB".format(bytes / 1024.0)
+            bytes > 1L shl 30 -> ((bytes / 1073741824.0 * 10).toLong() / 10.0).toString() + " GB"
+            bytes > 1L shl 20 -> kotlin.math.round(bytes / 1048576.0).toInt().toString() + " MB"
+            else -> (kotlin.math.round(bytes / 1024.0).toInt()).toString() + " KB"
         }
 
         /**
@@ -843,13 +844,14 @@ class FifApi(private val fif: FifSession) {
          * 解不开就原样给回去 —— 宁可看见一串陌生的 ISO，也别看见一个空的时间段。
          */
         fun utc(s: String): String = runCatching {
-            java.time.ZonedDateTime.parse(s)
-                .withZoneSameInstant(java.time.ZoneId.systemDefault())
-                .format(HHMM)
+            val t = kotlinx.datetime.Instant.parse(s)
+                .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+            (if (t.monthNumber < 10) "0" else "") + t.monthNumber + "-" +
+                (if (t.dayOfMonth < 10) "0" else "") + t.dayOfMonth + " " +
+                (if (t.hour < 10) "0" else "") + t.hour + ":" +
+                (if (t.minute < 10) "0" else "") + t.minute
         }.getOrDefault(s)
 
-        val HHMM: java.time.format.DateTimeFormatter =
-            java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
     }
 }
 

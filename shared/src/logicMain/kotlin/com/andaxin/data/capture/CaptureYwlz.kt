@@ -6,7 +6,10 @@ import com.andaxin.data.brief.BriefRow
 import com.andaxin.data.brief.DetailSource
 import com.andaxin.data.brief.Flag
 import com.andaxin.data.brief.ListSource
-import java.net.URLDecoder
+import com.andaxin.core.net.formUrlDecode
+import com.andaxin.core.concurrency.nowMillis
+import com.andaxin.core.concurrency.todayLocalDate
+import com.andaxin.core.concurrency.minusMonthsCompat
 import kotlinx.coroutines.async
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
@@ -75,7 +78,7 @@ internal fun parseQuery(url: String): Map<String, String> {
         val i = kv.indexOf('=')
         if (i <= 0) return@mapNotNull null
         val v = kv.substring(i + 1)
-        kv.substring(0, i) to runCatching { URLDecoder.decode(v, "UTF-8") }.getOrDefault(v)
+        kv.substring(0, i) to runCatching { formUrlDecode(v) }.getOrDefault(v)
     }.toMap()
 }
 
@@ -99,7 +102,7 @@ class YwlzTasks(private val school: School) {
 
     suspend fun all(): Result<List<YwlzTask>> {
         val hit = cached
-        if (hit != null && System.currentTimeMillis() - cachedAt < TTL) return Result.success(hit)
+        if (hit != null && nowMillis() - cachedAt < TTL) return Result.success(hit)
         return school.postH5(
             "$YWLZ/mobile/flowRuTask/getRunTaskByUserCode.do",
             "approvedType" to "1",
@@ -111,7 +114,7 @@ class YwlzTasks(private val school: School) {
         }.also { r ->
             r.getOrNull()?.let {
                 cached = it
-                cachedAt = System.currentTimeMillis()
+                cachedAt = nowMillis()
             }
         }
     }
@@ -244,7 +247,7 @@ class YwlzTasks(private val school: School) {
      */
     suspend fun history(): Result<List<YwlzTask>> =
         cached("hi") {
-            val today = java.time.LocalDate.now()
+            val today = todayLocalDate()
             school.postH5(
                 "$YWLZ/mobile/flowRuTask/getHiTaskByUserCode.do",
                 "currentPageNo" to "1",
@@ -252,7 +255,7 @@ class YwlzTasks(private val school: School) {
                 "timeType" to "1",
                 "status" to "3",
                 "title" to "",
-                "beginTime" to today.minusMonths(3).toString(),
+                "beginTime" to today.minusMonthsCompat(3).toString(),
                 "endTime" to today.toString(),
             ).mapCatching { root ->
                 val arr = School.rows(root)
@@ -313,11 +316,11 @@ class YwlzTasks(private val school: School) {
 
     private suspend fun cached(name: String, fetch: suspend () -> Result<List<YwlzTask>>): Result<List<YwlzTask>> {
         caches[name]?.let { (list, at) ->
-            if (System.currentTimeMillis() - at < TTL) return Result.success(list)
+            if (nowMillis() - at < TTL) return Result.success(list)
         }
         val r = fetch()
         r.getOrNull()?.let {
-            caches[name] = it to System.currentTimeMillis()
+            caches[name] = it to nowMillis()
             lastLoaded = name
         }
         return r
@@ -531,7 +534,7 @@ internal suspend fun dormDetailOf(school: School, a: YwlzTask): Result<BriefDeta
  * `getTaskInfoByDateId` 回 113 个键、22KB 数据）。老的调用方是从待办那条 url 里拆 dateId，
  * 两条路最后都汇到这里，字段映射只有一份。
  */
-internal suspend fun dormDetailByDateId(school: School, dateId: String, fallback: BriefDetail): Result<BriefDetail> {
+suspend fun dormDetailByDateId(school: School, dateId: String, fallback: BriefDetail): Result<BriefDetail> {
     if (dateId.isBlank()) return Result.success(fallback)
 
     val r = school.postJson(
@@ -676,7 +679,7 @@ class CaptureAffairDetail(
                 school.postH5(
                     "${School.YWLZ}/mobile/flowRuTask/getApprovedInfoByExeId.do",
                     "executionId" to exe,
-                    "_t" to System.currentTimeMillis().toString(),
+                    "_t" to nowMillis().toString(),
                 )
             }
             val formA = async {
@@ -799,7 +802,7 @@ class CaptureAffairDetail(
         val a = affordById[id]
             ?: return Result.failure(Exception("这一条已经不在待办列表里了，回列表重进一次"))
         if (a.executionId.isBlank()) return Result.failure(Exception("这条是消息类，没有可提交的流程"))
-        val stamp = System.currentTimeMillis().toString()
+        val stamp = nowMillis().toString()
         return when (action) {
             "agree", "reject" -> {
                 val dataJson = dataJsonById[id]

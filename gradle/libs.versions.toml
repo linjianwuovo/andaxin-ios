@@ -13,6 +13,7 @@ serialization-json = "1.9.0"
 coroutines = "1.10.2"
 ktor = "3.2.2"
 org-json = "20250517"
+kotlinx-datetime = "0.6.1"
 coil = "3.0.4"
 # 外观三件套：他定的样子，留着
 miuix = "0.9.4"
@@ -46,6 +47,7 @@ ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.r
 # JVM 测试架用的真 org.json（Android 用平台自带，iOS 用自写垫片）——三方各得其所
 org-json = { group = "org.json", name = "json", version.ref = "org-json" }
 datastore-preferences-core = { group = "androidx.datastore", name = "datastore-preferences-core", version.ref = "datastore" }
+kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 

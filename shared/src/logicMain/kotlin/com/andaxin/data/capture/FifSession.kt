@@ -1,23 +1,23 @@
 package com.andaxin.data.capture
 
-import com.andaxin.core.net.Http
+import com.andaxin.core.concurrency.nowMillis
+import com.andaxin.core.json.JSONObject
+import com.andaxin.core.net.CookieStore
+import com.andaxin.core.net.HttpCall
+import com.andaxin.core.net.HttpEngine
+import com.andaxin.core.net.HttpEngineConfig
+import com.andaxin.core.net.RawCookie
+import com.andaxin.core.net.createHttpEngine
+import com.andaxin.core.net.formUrlEncode
+import com.andaxin.core.net.matches
 import com.andaxin.core.store.SessionStore
 import com.andaxin.core.store.Store
-import java.io.IOException
-import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import okhttp3.Cookie
-import okhttp3.CookieJar
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import com.andaxin.core.json.JSONObject
+import okio.IOException
 
 /*
  * AI 课堂那套（FIF 平台）的会话层。
@@ -36,6 +36,10 @@ import com.andaxin.core.json.JSONObject
  *   三跳全通，`myClassroom` 回 15 门课，签到两发、`getOneCourse`、`getFirstPageOfCourse`、
  *   直录播 76 条都拿到了真数据。这一层下面的注释凡写"实测"都是指这一轮。
  *   **唯一没验成的**：手机里这个 App 自己走一遍（PC 上通了，界面上还没读到过）。
+ *
+ * 平移注（2026-10-24）：底层 OkHttp 换共享层的 HTTP 缝引擎（followRedirects=false，cookie 罐
+ * 自己实现 CookieStore）——Android 端实际仍是那台 OkHttp 池，报文路径不变；withIo 那层不需要了，
+ * 引擎自己管线程。Behavior 口径（超时、UA、头顺序）逐条照抄。
  */
 
 /**
@@ -65,39 +69,42 @@ class FifSession(
 
     private val mutex = Mutex()
 
+    /** cookie 罐的锁：原来用 JVM 的 synchronized，共享层换三平台 Lock。 */
+    private val jarLock = com.andaxin.core.concurrency.Lock()
+
     /**
      * 只活在进程里的 cookie 罐。按 host 分桶，同名同 path 同 domain 覆盖，过期即丢 ——
      * OkHttp 自带的示例实现是全局一张 map，跨域名会串。
      */
-    private val jar = java.util.concurrent.ConcurrentHashMap<String, MutableList<Cookie>>()
+    private val jar = MemJar()
 
-    private val client: OkHttpClient by lazy {
-        Http.client.newBuilder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            // 第一跳要自己读 302 的 Location，不能让 OkHttp 替我跟过去
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .cookieJar(
-                object : CookieJar {
-                    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                        val keep = cookies.filter { it.expiresAt == Long.MAX_VALUE || it.expiresAt > System.currentTimeMillis() }
-                        if (keep.isEmpty()) return
-                        jar.getOrPut(url.host) { mutableListOf() }.let { list ->
-                            keep.forEach { c ->
-                                list.removeAll { old ->
-                                    old.name == c.name && old.path == c.path && old.domain == c.domain
-                                }
-                                list.add(c)
-                            }
-                        }
-                    }
+    private val engine: HttpEngine = createHttpEngine(
+        HttpEngineConfig(
+            connectTimeoutMs = 15_000,
+            readTimeoutMs = 20_000,
+            // 第一跳要自己读 302 的 Location，不能让引擎替我跟过去
+            followRedirects = false,
+            cookieStore = jar,
+        ),
+    )
 
-                    override fun loadForRequest(url: HttpUrl): List<Cookie> =
-                        jar[url.host].orEmpty().filter { it.matches(url) }
-                },
-            )
-            .build()
+    /** 进程内 cookie 罐：引擎收发时回调。口径照原来那只 okhttp CookieJar 抄的。 */
+    private class MemJar : CookieStore {
+        val map = HashMap<String, MutableList<RawCookie>>()
+        private val mapLock = com.andaxin.core.concurrency.Lock()
+
+        override fun save(host: String, cookies: List<RawCookie>) {
+            mapLock.withLock {
+                val list = map.getOrPut(host) { mutableListOf() }
+                cookies.forEach { c ->
+                    list.removeAll { old -> old.name == c.name && old.path == c.path && old.domain == c.domain }
+                    list.add(c)
+                }
+            }
+        }
+
+        override fun load(host: String, path: String): List<RawCookie> =
+            mapLock.withLock { map[host].orEmpty().filter { it.matches(host, path) } }
     }
 
     /**
@@ -121,7 +128,7 @@ class FifSession(
     suspend fun isSessionValid(): Boolean {
         val token = store.peekString(store.snapshot(), KEY_FIF_TOKEN).orEmpty()
         if (token.isBlank()) return false
-        return jwtExpiresAt(token)?.let { System.currentTimeMillis() / 1000 + SKEW < it } ?: true
+        return jwtExpiresAt(token)?.let { nowMillis() / 1000 + SKEW < it } ?: true
     }
 
     suspend fun ids(): FifIds? {
@@ -148,12 +155,12 @@ class FifSession(
      *
      * 为什么要这个：签到二维码解出来是个**网页**（`qrcodeV2/qrcodeHandler?token=…`），
      * 官方是拿带着 FIF 会话的 WebView 打开它、由服务端完成签到。我们 App 里那份会话
-     * 只活在 OkHttp 的 cookie 罐里，WebView 看不到 —— 不搬过去，页面就是没登录的样子。
+     * 只活在自己的 cookie 罐里，WebView 看不到 —— 不搬过去，页面就是没登录的样子。
      */
     fun cookieHeader(host: String): String =
-        synchronized(jar) {
-            jar.entries.firstOrNull { it.key.endsWith(host) }?.value.orEmpty()
-                .filter { it.expiresAt > System.currentTimeMillis() }
+        jarLock.withLock {
+            jar.map.entries.firstOrNull { it.key.endsWith(host) }?.value.orEmpty()
+                .filter { it.expiresAtMillis > nowMillis() }
                 .joinToString("; ") { "${it.name}=${it.value}" }
         }
 
@@ -195,7 +202,7 @@ class FifSession(
             "&appId=${School.APP_ID}" +
             "&returnFromIscToAppFunc=ReturnDefault"
         val location = runCatching {
-            get(ssoUrl, "Location")
+            engine.execute(get(ssoUrl)).header("Location")
         }.getOrElse { return Result.failure(it) }
 
         /*
@@ -207,13 +214,13 @@ class FifSession(
             ?: return Result.failure(IOException("单点登录没回 token（Location：${location?.take(90) ?: "没有跳转"}）"))
 
         // 第二跳：只为让服务器 Set-Cookie 出 SESSION
-        runCatching { getRaw("$HOST_STTP/studycenter-nh5/?token=${urlEnc(jwt)}&app=axx") }
+        runCatching { engine.execute(get("$HOST_STTP/studycenter-nh5/?token=${urlEnc(jwt)}&app=axx")) }
 
         // 第三跳：换三个 id。失败不致命 —— 课程列表照样能拉，只是签到/小组那几发没身份
         val ids = runCatching { fetchIds(jwt) }.getOrElse {
             store.setText(KEY_FIF_TOKEN, jwt)
             saveIdentityCookies(jwt, ids = null)
-            return Result.failure(IOException("FIF 身份接口没通：${it.message ?: it.javaClass.simpleName}"))
+            return Result.failure(IOException("FIF 身份接口没通：${it.message ?: it::class.simpleName}"))
         }
         store.setMany(
             KEY_FIF_TOKEN to jwt,
@@ -227,7 +234,7 @@ class FifSession(
     }
 
     suspend fun clear() {
-        jar.clear()
+        jarLock.withLock { jar.map.clear() }
         store.setMany(
             KEY_FIF_TOKEN to null,
             KEY_STUDENT_ID to null,
@@ -261,20 +268,22 @@ class FifSession(
         throw last ?: IOException("身份接口三次都没通")
     }
 
-    /** 中文姓名进 cookie 前必须转 ASCII，否则 OkHttp 直接抛 `Unexpected char 0x… in Cookie value`，把整条登录链炸掉。 */
+    /** 中文姓名进 cookie 前必须转 ASCII，否则引擎会因非法字符拒掉整条 cookie，把整条登录链炸掉。 */
     private fun saveIdentityCookies(jwt: String, ids: FifIds?) {
         val name = ids?.userName?.takeIf { it.isNotBlank() } ?: return
         val pairs = listOf(
             "id" to ids.studentId,
             "studentId" to ids.studentId,
-            "currentUserName" to URLEncoder.encode(name, "UTF-8"),
+            "currentUserName" to formUrlEncode(name),
         )
         val list = pairs.filter { it.second.isNotBlank() }.map { (k, v) ->
-            Cookie.Builder().name(k).value(v).domain("fifedu.com").path("/").build()
+            RawCookie(k, v, "fifedu.com", "/", Long.MAX_VALUE)
         }
-        jar[HOST_STTP] = mutableListOf<Cookie>().apply {
-            addAll(jar[HOST_STTP].orEmpty().filterNot { n -> list.any { it.name == n.name } })
-            addAll(list)
+        jarLock.withLock {
+            val old = jar.map[HOST_STTP].orEmpty()
+            jar.map[HOST_STTP] = (
+                old.filterNot { n -> list.any { it.name == n.name } } + list
+                ).toMutableList()
         }
     }
 
@@ -284,20 +293,22 @@ class FifSession(
      * 【取证】③ 出自旧项目 2026-10-13 抓到的官方那一发。
      */
     suspend fun getResc(url: String, jwt: String): String {
-        val req = Request.Builder().url(url).get()
-            .header("User-Agent", WEB_UA)
-            .header("Accept", "application/json, text/plain, */*")
-            .header("authorization", jwt)
-            .header("X-Requested-With", "com.andaxin")
-            .header("Referer", "$HOST_RESC/")
-            .header("Origin", HOST_RESC)
-            .build()
-        return withIo {
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("资源中心回了 ${resp.code}")
-                resp.body?.string().orEmpty()
-            }
-        }
+        val reply = engine.execute(
+            HttpCall(
+                method = "GET",
+                url = url,
+                headers = listOf(
+                    "User-Agent" to WEB_UA,
+                    "Accept" to "application/json, text/plain, */*",
+                    "authorization" to jwt,
+                    "X-Requested-With" to "com.andaxin",
+                    "Referer" to "$HOST_RESC/",
+                    "Origin" to HOST_RESC,
+                ),
+            ),
+        )
+        if (!reply.isSuccessful) throw IOException("资源中心回了 ${reply.status}")
+        return reply.bodyText
     }
 
     /**
@@ -310,74 +321,53 @@ class FifSession(
      * 所以这一族要的是一串能被 base64 解开的东西，而裸 JWT 恰好能过（`lxtmp/_adapt_probe.txt`）。
      */
     suspend fun getAdapt(url: String, jwt: String, referer: String): JSONObject {
-        val req = Request.Builder().url(url).get()
-            .header("User-Agent", WEB_UA)
-            .header("Accept", "application/json, text/plain, */*")
-            .header("Authorization", jwt)
-            .header("Referer", referer)
-            .header("X-Requested-With", "cn.edu.aiit.axx")
-            .build()
-        return withIo {
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("adapt-app 回了 ${resp.code}")
-                JSONObject(resp.body?.string().orEmpty())
-            }
-        }
+        val reply = engine.execute(
+            HttpCall(
+                method = "GET",
+                url = url,
+                headers = listOf(
+                    "User-Agent" to WEB_UA,
+                    "Accept" to "application/json, text/plain, */*",
+                    "Authorization" to jwt,
+                    "Referer" to referer,
+                    "X-Requested-With" to "cn.edu.aiit.axx",
+                ),
+            ),
+        )
+        if (!reply.isSuccessful) throw IOException("adapt-app 回了 ${reply.status}")
+        return JSONObject(reply.bodyText)
     }
 
-    private suspend fun get(url: String, header: String): String? = withIo {
-        val req = Request.Builder().url(url).get().header("User-Agent", WEB_UA).build()
-        client.newCall(req).execute().use { resp -> resp.header(header) }
-    }
-
-    private suspend fun getRaw(url: String) {
-        withIo {
-            val req = Request.Builder().url(url).get().header("User-Agent", WEB_UA).build()
-            client.newCall(req).execute().use { it.body?.string() }
-        }
-    }
+    private fun get(url: String): HttpCall = HttpCall(
+        method = "GET",
+        url = url,
+        headers = listOf("User-Agent" to WEB_UA),
+    )
 
     suspend fun postForm(url: String, fields: List<Pair<String, String>>, auth: String?): String {
-        val form = okhttp3.FormBody.Builder().apply { fields.forEach { (k, v) -> add(k, v) } }.build()
-        val builder = Request.Builder().url(url).post(form)
-            .header("User-Agent", WEB_UA)
-            .header("Accept", "application/json, text/plain, */*")
-        if (auth != null) builder.header("authorization", auth)
-        builder.header("Visit-Type", "mobile")
-        val req = builder.build()
-        return withIo {
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("FIF 回了 ${resp.code}")
-                resp.body?.string().orEmpty()
-            }
+        val headers = buildList {
+            add("User-Agent" to WEB_UA)
+            add("Accept" to "application/json, text/plain, */*")
+            if (auth != null) add("authorization" to auth)
+            add("Visit-Type" to "mobile")
         }
+        val reply = engine.execute(HttpCall(url = url, headers = headers, body = com.andaxin.core.net.HttpBody.Form(fields)))
+        if (!reply.isSuccessful) throw IOException("FIF 回了 ${reply.status}")
+        return reply.bodyText
     }
 
     /** 带 JWT 发一发 GET，回根节点。 */
     suspend fun getJson(url: String, auth: String? = null): JSONObject {
-        val builder = Request.Builder().url(url).get()
-            .header("User-Agent", WEB_UA)
-            .header("Accept", "application/json, text/plain, */*")
-        builder.header("Visit-Type", "mobile")
-        (auth ?: authHeader())?.let { builder.header("authorization", it) }
-        val req = builder.build()
-        return withIo {
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("FIF 回了 ${resp.code}")
-                JSONObject(resp.body?.string().orEmpty())
-            }
+        val headers = buildList {
+            add("User-Agent" to WEB_UA)
+            add("Accept" to "application/json, text/plain, */*")
+            add("Visit-Type" to "mobile")
+            (auth ?: authHeader())?.let { add("authorization" to it) }
         }
+        val reply = engine.execute(HttpCall(method = "GET", url = url, headers = headers))
+        if (!reply.isSuccessful) throw IOException("FIF 回了 ${reply.status}")
+        return JSONObject(reply.bodyText)
     }
-
-    /**
-     * 这一族每一发都得自己挪到 IO 线程上。
-     *
-     * 【取证 · ② 我们发出去并被现场撞到的】10-20 上午真机进 AI 课堂，界面直接把
-     * `NetworkOnMainThreadException` 显示出来了 —— 上面这些用的是 `execute()` 同步调用，
-     * 而调用方（`LaunchedEffect`）默认在主线程组合作用域里跑。`in.aiit` 那一族在
-     * `School.post` 里统一包过一层，所以只有 FIF 这块漏了。别指望调用方记得包。
-     */
-    private suspend fun <T> withIo(block: suspend () -> T): T = withContext(Dispatchers.IO) { block() }
 
     private companion object {
         const val HOST_PASS = "https://aiitpass.fifedu.com"
@@ -399,28 +389,31 @@ class FifSession(
         const val KEY_SCHOOL_ID = "fif.schoolId"
         const val KEY_MEMBER_ID = "fif.memberId"
 
-        fun urlEnc(s: String): String = URLEncoder.encode(s, "UTF-8")
+        fun urlEnc(s: String): String = formUrlEncode(s)
 
-        /** Location 里取 token：先按 query 正规解，解不出来退回正则（那条 Location 见过不规范编码）。 */
+        /**
+         * Location 里取 token：正规按 query 解（split & 找 token= 再 formUrlDecode），
+         * 解不出空值退回正则（那条 Location 见过不规范编码）。
+         */
         fun tokenFromLocation(location: String?): String? {
             if (location.isNullOrBlank()) return null
-            val fromUrl = runCatching {
-                location.toHttpUrl().queryParameter("token")
-            }.getOrNull()
+            val fromUrl = location.substringAfter('?', "").split('&')
+                .firstOrNull { it.startsWith("token=") }
+                ?.removePrefix("token=")
+                ?.let { runCatching { com.andaxin.core.net.formUrlDecode(it) }.getOrNull() }
             return fromUrl?.takeIf { it.isNotBlank() }
                 ?: Regex("[?&]token=([^&]+)").find(location)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
         }
 
         /** JWT 第二段 base64url 解出来，取 `memberId` 或 `memberUserId`。 */
+        @OptIn(ExperimentalEncodingApi::class)
         fun memberFromJwt(jwt: String): String? {
             val parts = jwt.split('.')
             if (parts.size < 2) return null
             val json = runCatching {
-                String(
-                    java.util.Base64.getUrlDecoder().decode(
-                        parts[1].padEnd((parts[1].length + 3) / 4 * 4, '='),
-                    ),
-                )
+                Base64.UrlSafe.decode(
+                    parts[1].padEnd((parts[1].length + 3) / 4 * 4, '='),
+                ).decodeToString()
             }.getOrNull() ?: return null
             val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
             return listOf("memberId", "memberUserId", "userId").asSequence()
@@ -429,15 +422,14 @@ class FifSession(
         }
 
         /** 解 JWT 的 `exp`（秒）。解不出来按"未到期"处理，别因为解析失败把人关在登录循环里。 */
+        @OptIn(ExperimentalEncodingApi::class)
         fun jwtExpiresAt(jwt: String): Long? {
             val parts = jwt.split('.')
             if (parts.size < 2) return null
             val json = runCatching {
-                String(
-                    java.util.Base64.getUrlDecoder().decode(
-                        parts[1].padEnd((parts[1].length + 3) / 4 * 4, '='),
-                    ),
-                )
+                Base64.UrlSafe.decode(
+                    parts[1].padEnd((parts[1].length + 3) / 4 * 4, '='),
+                ).decodeToString()
             }.getOrNull() ?: return null
             return runCatching { JSONObject(json).optLong("exp") }.getOrNull()?.takeIf { it > 0 }
         }

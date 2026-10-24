@@ -101,3 +101,35 @@ fun formUrlEncode(s: String): String {
     }
     return out.toString()
 }
+
+/**
+ * java.net.URLDecoder.decode(s, "UTF-8") 的同口径解码：+ 还原成空格，%XX 还原成字节再按 UTF-8 拼回。
+ * 遇到非法序列就原样保留那三个字符（runCatching 的老行为也是带回原文）。
+ */
+fun formUrlDecode(s: String): String {
+    if (!s.contains('%') && !s.contains('+')) return s
+    val bytes = ArrayList<Byte>(s.length)
+    var i = 0
+    while (i < s.length) {
+        val c = s[i]
+        when {
+            c == '+' -> { bytes.add(' '.code.toByte()); i++ }
+            c == '%' -> {
+                val hex = s.substring(i + 1, minOf(i + 3, s.length))
+                val v = hex.toIntOrNull(16)
+                if (hex.length == 2 && v != null) {
+                    bytes.add(v.toByte()); i += 3
+                } else {
+                    bytes.add('%'.code.toByte()); i++
+                }
+            }
+            else -> {
+                // 非 ASCII 原样进（不可能是编码产物，保原样）
+                if (c.code < 128) bytes.add(c.code.toByte())
+                else return s
+                i++
+            }
+        }
+    }
+    return bytes.toByteArray().decodeToString()
+}
