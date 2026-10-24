@@ -89,6 +89,8 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.okhttp)
+            // SharedViewModel 的 Android actual 挂 androidx.lifecycle.ViewModel（scope = viewModelScope）
+            implementation(libs.lifecycle.viewmodel.ktx)
         }
         jvmMain.dependencies {
             implementation(libs.okhttp)

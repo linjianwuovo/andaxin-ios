@@ -1,9 +1,7 @@
 package com.andaxin.state
 
-import androidx.compose.runtime.Immutable
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.andaxin.core.schedule.Periods
+import com.andaxin.core.concurrency.todayDayOfWeek
+import com.andaxin.core.ui.SharedViewModel
 import com.andaxin.data.Dashboard
 import com.andaxin.data.DashboardFeed
 import com.andaxin.data.MessageFeed
@@ -19,11 +17,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /*
- * UiState 一律 @Immutable：Compose 靠这个决定要不要重绘，标错了就是白屏或掉帧。
+ * UiState 都是只读数据类（val + List + 基本类型），Compose 按不可变值处理。
+ * 原来在 app 里还挂着 @Immutable（编译器提示，帮跳过相等性检查），共享层不带注解 ——
+ * 少的是个提示，不是正确性。
  * 一次出：加载态只在"第一次什么都没有"时占位，刷新期间保留旧数据，别整屏闪一下骨架。
  */
 
-@Immutable
 data class HomeUiState(
     val firstLoad: Boolean = true,
     val data: Dashboard? = null,
@@ -44,7 +43,7 @@ data class HomeUiState(
 class HomeModel(
     private val feed: DashboardFeed,
     private val timetable: TimetableFeed,
-) : ViewModel() {
+) : SharedViewModel() {
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
@@ -55,7 +54,7 @@ class HomeModel(
     }
 
     fun reload() {
-        viewModelScope.launch { refresh() }
+        scope.launch { refresh() }
     }
 
     /**
@@ -74,10 +73,11 @@ class HomeModel(
         _state.value = HomeUiState(
             firstLoad = false,
             data = dash0 ?: _state.value.data,
-            // 今天星期几由 Periods 说，跟周网格、首页"几节课"同一张表 —— 这儿原来写死 ==1，
+            // 今天星期几由 todayDayOfWeek 说（口径对齐 app 侧 Periods.today，周一起 1..7），
+            // 跟周网格、首页"几节课"同一张表 —— 这儿原来写死 ==1，
             // 周一看着对，周二起就把周一的课当今天显示（10-20 上午装机读屏撞中的就是这个）。
             // `startPeriod >= 1` 是"这是课"的闸：校方那条 `ksjc=0` 的阳光晨跑是活动占位，不算课。
-            today = list.filter { it.day == Periods.today() && it.startPeriod >= 1 },
+            today = list.filter { it.day == todayDayOfWeek() && it.startPeriod >= 1 },
             todayKnown = slots.isSuccess,
             error = (dash.exceptionOrNull() ?: slots.exceptionOrNull())?.message,
             refreshing = false,
@@ -85,7 +85,6 @@ class HomeModel(
     }
 }
 
-@Immutable
 data class TimetableUiState(
     val firstLoad: Boolean = true,
     val weekOffset: Int = 0,
@@ -97,12 +96,12 @@ data class TimetableUiState(
     val now: Int = 0,
 )
 
-class TimetableModel(private val feed: TimetableFeed) : ViewModel() {
+class TimetableModel(private val feed: TimetableFeed) : SharedViewModel() {
     private val _state = MutableStateFlow(TimetableUiState())
     val state: StateFlow<TimetableUiState> = _state.asStateFlow()
 
     init {
-        viewModelScope.launch {
+        scope.launch {
             val w = runCatching { feed.weeks() }.getOrNull()
             if (w != null && w.weeks.isNotEmpty()) {
                 _state.value = _state.value.copy(weeks = w.weeks, now = w.now)
@@ -112,7 +111,7 @@ class TimetableModel(private val feed: TimetableFeed) : ViewModel() {
     }
 
     fun load(offset: Int) {
-        viewModelScope.launch { refresh(offset) }
+        scope.launch { refresh(offset) }
     }
 
     /** 挂起版给下拉刷新用：等这一发回来才收指示器。 */
@@ -128,7 +127,6 @@ class TimetableModel(private val feed: TimetableFeed) : ViewModel() {
     }
 }
 
-@Immutable
 data class MessageUiState(
     val firstLoad: Boolean = true,
     val items: List<MessageItem> = emptyList(),
@@ -137,7 +135,7 @@ data class MessageUiState(
     val readError: String? = null,
 )
 
-class MessageModel(private val feed: MessageFeed) : ViewModel() {
+class MessageModel(private val feed: MessageFeed) : SharedViewModel() {
     private val _state = MutableStateFlow(MessageUiState())
     val state: StateFlow<MessageUiState> = _state.asStateFlow()
 
@@ -146,7 +144,7 @@ class MessageModel(private val feed: MessageFeed) : ViewModel() {
     }
 
     fun reload() {
-        viewModelScope.launch { refresh() }
+        scope.launch { refresh() }
     }
 
     /** 挂起版给下拉刷新用：等这一发回来才收指示器。 */
@@ -170,7 +168,7 @@ class MessageModel(private val feed: MessageFeed) : ViewModel() {
      * 失败的原因留在 [readError] 上，消息屏那一行下面会显示出来。
      */
     fun markRead(id: String) {
-        viewModelScope.launch {
+        scope.launch {
             val r = try { feed.markRead(id) } catch (e: Exception) { Result.failure(e) }
             if (r.isSuccess) {
                 val next = _state.value.items.map { if (it.id == id) it.copy(unread = false) else it }
@@ -185,14 +183,13 @@ class MessageModel(private val feed: MessageFeed) : ViewModel() {
     }
 }
 
-@Immutable
 data class NoticeUiState(
     val firstLoad: Boolean = true,
     val items: List<NoticeItem> = emptyList(),
     val error: String? = null,
 )
 
-class NoticeModel(private val feed: NoticeFeed) : ViewModel() {
+class NoticeModel(private val feed: NoticeFeed) : SharedViewModel() {
     private val _state = MutableStateFlow(NoticeUiState())
     val state: StateFlow<NoticeUiState> = _state.asStateFlow()
 
@@ -201,7 +198,7 @@ class NoticeModel(private val feed: NoticeFeed) : ViewModel() {
     }
 
     fun reload() {
-        viewModelScope.launch { refresh() }
+        scope.launch { refresh() }
     }
 
     /** 挂起版给下拉刷新用：等这一发回来才收指示器。 */
