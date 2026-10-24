@@ -3,9 +3,11 @@ package com.andaxin.core.concurrency
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -23,3 +25,7 @@ fun todayLocalDate(): LocalDate =
 
 /** java.time LocalDate.minusMonths 的同口径帮手（kotlinx-datetime 里叫 DatePeriod）。 */
 fun LocalDate.minusMonthsCompat(months: Int): LocalDate = minus(DatePeriod(months = months))
+
+/** 今天偏移 days 天的 ISO 日期串（"yyyy-MM-dd"），对齐 Calendar+SimpleDateFormat 那套老写法。 */
+fun localDateOffset(days: Int): String =
+    todayLocalDate().plus(days, DateTimeUnit.DAY).toString()

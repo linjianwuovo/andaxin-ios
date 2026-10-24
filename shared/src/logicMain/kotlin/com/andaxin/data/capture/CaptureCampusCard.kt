@@ -1,26 +1,23 @@
 package com.andaxin.data.capture
 
-import com.andaxin.core.net.Http
-import com.andaxin.core.store.SessionStore
-import java.io.File
-import java.net.URLEncoder
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
-import okhttp3.Cookie
-import okhttp3.CookieJar
-import okhttp3.FormBody
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import com.andaxin.core.concurrency.localDateOffset
 import com.andaxin.core.json.JSONArray
 import com.andaxin.core.json.JSONObject
+import com.andaxin.core.net.CookieStore
+import com.andaxin.core.net.HttpBody
+import com.andaxin.core.net.HttpCall
+import com.andaxin.core.net.HttpEngine
+import com.andaxin.core.net.HttpEngineConfig
+import com.andaxin.core.net.RawCookie
+import com.andaxin.core.net.appendQueryParams
+import com.andaxin.core.net.createHttpEngine
+import com.andaxin.core.net.formUrlEncode
+import com.andaxin.core.net.matches
+import com.andaxin.core.net.queryParamOf
+import com.andaxin.core.store.AppFiles
+import com.andaxin.core.store.SessionStore
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 /*
  * 校园卡（第三方：新开普 17wanxiao）。
@@ -62,11 +59,17 @@ import com.andaxin.core.json.JSONObject
  *
  * 隐私：`cardNo`/`asn`/`scardsnr`/`name`/`outid` 这些键服务端给了也不落盘、不显示，
  * 界面只用「有效期」「上次账务变动」这类不含卡号的项。
+ *
+ * 平移注（2026-10-24）：transport 换引擎缝（hub 那两跳共用一个带 cookie 罐的临时引擎，
+ * JSESSIONID 由引擎自动带过去，口径同原 MapJar）；`cache: File` 换 `files: AppFiles`
+ * （token 落 filesDir/ecard_token.txt，还是原来那份文件）；Calendar/SimpleDateFormat 换日期帮手。
+ * 注意：`_userName` 在原来那版就是 enc 过再交给 okhttp 二次编码（线上口径即双重编码），
+ * appendQueryParams 同样会再编一次，线上报文不变。
  */
 class CampusCardClient(
     private val school: School,
     private val session: SessionStore,
-    private val cache: File,
+    private val files: AppFiles,
 ) {
 
     data class Flow(
@@ -149,17 +152,18 @@ class CampusCardClient(
             ?: entries.firstOrNull {
                 it.optString("mc").contains("校园卡") && it.optString("sjdfwdz").startsWith("http")
             })?.optString("sjdfwdz") ?: return null
-        return runCatching {
-            raw.toHttpUrl().newBuilder()
-                .addQueryParameter("access_token", id.accessToken)
-                .addQueryParameter("_userCode", id.userCode)
-                .addQueryParameter("userCode", id.userCode)
-                .addQueryParameter("code", id.userCode)
-                .addQueryParameter("_userName", id.userName)
-                .addQueryParameter("_userType", id.userType)
-                .addQueryParameter("appId", School.APP_ID)
-                .build().toString()
-        }.getOrNull()
+        return appendQueryParams(
+            raw,
+            listOf(
+                "access_token" to id.accessToken,
+                "_userCode" to id.userCode,
+                "userCode" to id.userCode,
+                "code" to id.userCode,
+                "_userName" to id.userName,
+                "_userType" to id.userType,
+                "appId" to School.APP_ID,
+            ),
+        )
     }
 
     private suspend fun attempt(token: String, onStage: (Card) -> Unit = {}): Result<Card> = coroutineScope {
@@ -259,53 +263,53 @@ class CampusCardClient(
     }
 
     /** 一次业务调用：发出去、判两层信封、把 `body` 那层解开交出去。 */
-    private suspend fun xyk(token: String, method: String, param: String): Result<JSONObject> =
-        withContext(Dispatchers.IO) {
-            val form = FormBody.Builder()
-                .add("token", token).add("method", method).add("param", param).build()
-            val req = Request.Builder().url("$ECARD/xyk").post(form)
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-                .header("Referer", "$ECARD/ecard_t/index.html?v=1")
-                .build()
-            try {
-                http.newCall(req).execute().use { resp ->
-                    val text = resp.body?.string().orEmpty()
-                    val root = runCatching { JSONObject(text) }.getOrNull()
-                        ?: return@use Result.failure(Exception("校园卡回的不是 JSON（HTTP ${resp.code}）"))
-                    if (!root.optBoolean("result_", false)) {
-                        // 4001 = 会话被顶掉，调用方要凭这个码决定要不要重换一次
-                        return@use Result.failure(
-                            Exception("${root.opt("code_")}：${root.optString("message_").ifBlank { "校园卡拒了这次调用" }}"),
-                        )
-                    }
-                    val inner = root.optString("body").ifBlank { "{}" }
-                    val b = runCatching { JSONObject(inner) }.getOrNull()
-                        ?: return@use Result.failure(Exception("校园卡的 body 解不开"))
-                    if (b.has("_result") && !b.optBoolean("_result", false)) {
-                        return@use Result.failure(
-                            Exception("校园卡：${b.optString("_message").ifBlank { "_code=${b.opt("_code")}" }}"),
-                        )
-                    }
-                    // 有的 method 把行放在 `data`，有的直接给对象，这里统一交出去让调用方取
-                    Result.success(b)
-                }
-            } catch (e: Exception) {
-                Result.failure(Exception("连不上校园卡：${e.message ?: e.javaClass.simpleName}"))
-            }
+    private suspend fun xyk(token: String, method: String, param: String): Result<JSONObject> {
+        val reply = runCatching {
+            http.execute(
+                HttpCall(
+                    url = "$ECARD/xyk",
+                    headers = listOf(
+                        "Accept" to "application/json",
+                        "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
+                        "Referer" to "$ECARD/ecard_t/index.html?v=1",
+                    ),
+                    body = HttpBody.Form(listOf("token" to token, "method" to method, "param" to param)),
+                ),
+            )
+        }.getOrElse { e ->
+            return Result.failure(Exception("连不上校园卡：" + (e.message ?: e::class.simpleName)))
         }
+        val root = runCatching { JSONObject(reply.bodyText) }.getOrNull()
+            ?: return Result.failure(Exception("校园卡回的不是 JSON（HTTP ${reply.status}）"))
+        if (!root.optBoolean("result_", false)) {
+            // 4001 = 会话被顶掉，调用方要凭这个码决定要不要重换一次
+            return Result.failure(
+                Exception("${root.opt("code_")}：${root.optString("message_").ifBlank { "校园卡拒了这次调用" }}"),
+            )
+        }
+        val inner = root.optString("body").ifBlank { "{}" }
+        val b = runCatching { JSONObject(inner) }.getOrNull()
+            ?: return Result.failure(Exception("校园卡的 body 解不开"))
+        if (b.has("_result") && !b.optBoolean("_result", false)) {
+            return Result.failure(
+                Exception("校园卡：${b.optString("_message").ifBlank { "_code=${b.opt("_code")}" }}"),
+            )
+        }
+        // 有的 method 把行放在 `data`，有的直接给对象，这里统一交出去让调用方取
+        return Result.success(b)
+    }
 
     /** 业务口 `XYK_TRADE_DETAIL` 的行在 `_result` 同级的 `data` 里。 */
     private fun JSONObject.rows(): JSONArray = optJSONArray("data") ?: JSONArray()
 
     private fun cachedToken(): String? = runCatching {
-        cache.readText().trim().lineSequence().firstOrNull()
+        files.readText(TOKEN_FILE)?.trim()?.lineSequence()?.firstOrNull()
     }.getOrNull()?.takeIf { it.length >= 20 }
 
     /** H9 → H1 → H2：从校方会话换出第三方 token。hub 那一跳的 cookie 只在本次交换里用。 */
     private suspend fun exchange(
         accessToken: String, userCode: String, userName: String, userType: String,
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<String> {
         val light = school.post(
             "${School.SCPS}/appService/getAppServiceMore.do",
             "pageIndex" to "1", "pageSize" to "60",
@@ -313,7 +317,6 @@ class CampusCardClient(
             val arr = root.optJSONArray("data") ?: JSONArray()
             // 出错时把这一发"到底回了什么"带出来：条数 + flag。
             // 只写"没有那一条"分不清是"清单变了"还是"这一发根本没成"——11:5x 就是卡在这儿。
-            val names = (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("mc") }
             val entries = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
             // 10-20 那会儿这一条叫「完美校园」，10-21 再看已经改名成「校园卡交易」——
             // 按名字硬比会静默失配。所以先认**地址**（17wanxiao 那套），认不到再按名字里带"校园卡"兜。
@@ -331,34 +334,37 @@ class CampusCardClient(
                 ?.optString("sjdfwdz")
                 ?.takeIf { it.contains("17wanxiao", true) }
                 ?: FALLBACK_LIGHT
-        }.getOrElse { return@withContext Result.failure(Exception(it.message)) }
+        }.getOrElse { return Result.failure(Exception(it.message)) }
 
-        val jar = MapJar()
-        val hub = http.newBuilder().cookieJar(jar).build()
-        val withIdentity = light.toHttpUrl().newBuilder()
-            .addQueryParameter("access_token", accessToken)
-            .addQueryParameter("_userCode", userCode)
-            .addQueryParameter("code", userCode)
-            .addQueryParameter("userCode", userCode)
-            .addQueryParameter("_userName", enc(userName))
-            .addQueryParameter("_userType", userType)
-            .addQueryParameter("appId", School.APP_ID)
-            .addQueryParameter("returnFromIscToAppFunc", "ReturnDefault")
-            .build()
+        // hub 那两跳共用一台带 cookie 罐的临时引擎：light.action 落的 JSESSIONID 由罐自动带到 redirect 那跳
+        val hub = createHttpEngine(
+            HttpEngineConfig(connectTimeoutMs = 15_000, readTimeoutMs = 20_000, cookieStore = MapJar()),
+        )
+        val withIdentity = appendQueryParams(
+            light,
+            listOf(
+                "access_token" to accessToken,
+                "_userCode" to userCode,
+                "code" to userCode,
+                "userCode" to userCode,
+                "_userName" to enc(userName),
+                "_userType" to userType,
+                "appId" to School.APP_ID,
+                "returnFromIscToAppFunc" to "ReturnDefault",
+            ),
+        )
         val code = runCatching {
-            hub.newCall(Request.Builder().url(withIdentity).get().header("Accept", "*/*").build())
-                .execute().use { resp ->
-                    jar.saveFromResponse(resp.request.url, Cookie.parseAll(resp.request.url, resp.headers))
-                    resp.code
-                }
-        }.getOrElse { return@withContext Result.failure(Exception("连不上校园卡入口：${it.message}")) }
-        if (code != 200) return@withContext Result.failure(Exception("校园卡入口回 $code"))
+            hub.execute(
+                HttpCall(method = "GET", url = withIdentity, headers = listOf("Accept" to "*/*")),
+            ).status
+        }.getOrElse { return Result.failure(Exception("连不上校园卡入口：" + (it.message ?: ""))) }
+        if (code != 200) return Result.failure(Exception("校园卡入口回 $code"))
 
         val userData = JSONObject()
             .put("access_token", accessToken)
             .put("returnFromIscToAppFunc", "ReturnDefault")
-            .put("ecardFunc", withIdentity.queryParameter("ecardFunc") ?: "index")
-            .put("flag", withIdentity.queryParameter("flag").orEmpty())
+            .put("ecardFunc", queryParamOf(withIdentity, "ecardFunc") ?: "index")
+            .put("flag", queryParamOf(withIdentity, "flag").orEmpty())
             .put("code", userCode)
             .put("_userName", userName)
             .put("_userType", userType)
@@ -366,46 +372,49 @@ class CampusCardClient(
             .put("_userCode", userCode)
             .put("userCode", userCode)
             .toString()
-        val req = Request.Builder().url("$HUB/redirect.action")
-            .post(FormBody.Builder().add("userData", userData).build())
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-            .build()
-        hub.newCall(req).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
-            // 少 cookie 时这里是 14 字节纯文本 "Access timeout"，HTTP 仍是 200 —— 别当 JSON 解
-            val root = runCatching { JSONObject(text) }.getOrNull()
-                ?: return@use Result.failure(
-                    Exception(
-                        "换校园卡会话没成（服务端回的是纯文本：${text.take(24)}；" +
-                            "入口 ${withIdentity.host}${withIdentity.encodedPath}）"
+        val reply = runCatching {
+            hub.execute(
+                HttpCall(
+                    url = "$HUB/redirect.action",
+                    headers = listOf(
+                        "Accept" to "application/json",
+                        "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
                     ),
-                )
-            val token = root.optString("token")
-            if (!root.optBoolean("result_", false) || token.length < 20) {
-                return@use Result.failure(
-                    Exception("换校园卡会话：${root.optString("message").ifBlank { "没给 token" }}"),
-                )
-            }
-            runCatching { cache.writeText(token) }   // 存起来复用，见文件注释那条"会踢掉上一把"
-            Result.success(token)
+                    body = HttpBody.Form(listOf("userData" to userData)),
+                ),
+            )
+        }.getOrElse { return Result.failure(Exception("连不上校园卡换会话那跳：" + (it.message ?: ""))) }
+        val text = reply.bodyText
+        // 少 cookie 时这里是 14 字节纯文本 "Access timeout"，HTTP 仍是 200 —— 别当 JSON 解
+        val root = runCatching { JSONObject(text) }.getOrNull()
+            ?: return Result.failure(
+                Exception(
+                    "换校园卡会话没成（服务端回的是纯文本：${text.take(24)}；" +
+                        "入口 ${withIdentity.substringBefore('?')}）",
+                ),
+            )
+        val token = root.optString("token")
+        if (!root.optBoolean("result_", false) || token.length < 20) {
+            return Result.failure(
+                Exception("换校园卡会话：${root.optString("message").ifBlank { "没给 token" }}"),
+            )
         }
+        runCatching { files.writeText(TOKEN_FILE, token) }   // 存起来复用，见文件注释那条"会踢掉上一把"
+        return Result.success(token)
     }
 
-    private val http: OkHttpClient = Http.client.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val http: HttpEngine = createHttpEngine(
+        HttpEngineConfig(connectTimeoutMs = 15_000, readTimeoutMs = 20_000),
+    )
 
-    private fun day(offset: Int): String {
-        val c = Calendar.getInstance()
-        c.add(Calendar.DAY_OF_YEAR, offset)
-        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.time)
-    }
+    private fun day(offset: Int): String = localDateOffset(offset)
 
     private companion object {
         const val HUB = "https://hub.17wanxiao.com/bsacs"
         const val ECARD = "https://ecardh5.17wanxiao.com/ecardh5"
+        /** 换出来的第三方 token 落这份文件（还是原来那个 ecard_token.txt）。 */
+        const val TOKEN_FILE = "ecard_token.txt"
+
         /** 只查当天那一发要多少条。一天内刷卡刷过 50 次不算常态，
          *  真撞上了由 `totalCount` 那条判据兜住：这一刀直接放弃，等全窗口那一发。 */
         const val TODAY_PAGE = 50
@@ -418,20 +427,22 @@ class CampusCardClient(
         const val FALLBACK_LIGHT =
             "https://hub.17wanxiao.com/bsacs/light.action?flag=ahxx_ecardh5_1000538&ecardFunc=index"
 
-        fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
+        fun enc(s: String): String = formUrlEncode(s)
     }
 }
 
 /** 够把 hub 那一跳的 JSESSIONID 带到下一跳就行，不做持久化。 */
-private class MapJar : CookieJar {
-    private val store = mutableMapOf<String, MutableList<Cookie>>()
+private class MapJar : CookieStore {
+    private val store = HashMap<String, MutableList<RawCookie>>()
 
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val live = cookies.filter { it.expiresAt > System.currentTimeMillis() }
-        val bucket = store.getOrPut(url.host) { mutableListOf() }
-        live.forEach { c -> bucket.removeAll { it.name == c.name }; bucket.add(c) }
+    override fun save(host: String, cookies: List<RawCookie>) {
+        val bucket = store.getOrPut(host) { mutableListOf() }
+        cookies.forEach { c ->
+            bucket.removeAll { it.name == c.name }
+            bucket.add(c)
+        }
     }
 
-    override fun loadForRequest(url: HttpUrl): List<Cookie> =
-        store[url.host].orEmpty().filter { it.matches(url) }
+    override fun load(host: String, path: String): List<RawCookie> =
+        store[host].orEmpty().filter { it.matches(host, path) }
 }

@@ -263,7 +263,7 @@ class AppGraph(val context: Context) {
      * 换出来的那把第三方 token 落在 `filesDir/ecard_token.txt` 复用 —— 每重换一次会踢掉上一把。
      */
     val card: CampusCardClient by lazy {
-        CampusCardClient(school, session, File(context.filesDir, "ecard_token.txt"))
+        CampusCardClient(school, session, files)
     }
 
     /**

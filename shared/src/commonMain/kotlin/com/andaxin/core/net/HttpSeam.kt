@@ -48,6 +48,25 @@ data class HttpEngineConfig(
     val cookieStore: CookieStore? = null,
 )
 
+/** 往 URL 上追加查询参数（值走 formUrlEncode）。口径对齐 okhttp HttpUrl.addQueryParameter：有 ? 补 &，没有补 ?。 */
+fun appendQueryParams(url: String, params: List<Pair<String, String>>): String {
+    if (params.isEmpty()) return url
+    val sb = StringBuilder(url)
+    sb.append(if (url.contains('?')) '&' else '?')
+    params.forEachIndexed { i, (k, v) ->
+        if (i > 0) sb.append('&')
+        sb.append(formUrlEncode(k)).append('=').append(formUrlEncode(v))
+    }
+    return sb.toString()
+}
+
+/** 从 URL 的 query 里取一个参数的值（formUrlDecode 回来）。取不到回 null。 */
+fun queryParamOf(url: String, key: String): String? =
+    url.substringAfter('?', "").substringBefore('#').split('&')
+        .firstOrNull { it.substringBefore('=') == key }
+        ?.substringAfter('=', "")
+        ?.let { runCatching { formUrlDecode(it) }.getOrNull() }
+
 interface HttpEngine {
     /** 网络层失败直接抛（调用方 School 那层统一 catch 转 Result）；HTTP 4xx/5xx 不抛，回给调用方看。 */
     suspend fun execute(call: HttpCall, timeoutMs: Long? = null): HttpReply
