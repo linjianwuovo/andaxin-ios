@@ -41,7 +41,7 @@ jobs:
             -scheme AndaXin -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO build \
-            | xcbeautify --quiet
+            | xcbeautify
 
       - name: 模拟器装上、点亮、截屏
         run: |
@@ -62,7 +62,7 @@ jobs:
             -scheme AndaXin -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build-device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build \
-            | xcbeautify --quiet
+            | xcbeautify
           APP=$(find build-device/Build/Products -name 'AndaXin.app' -path '*iphoneos*' | head -1)
           mkdir -p Payload
           cp -R "$APP" Payload/
