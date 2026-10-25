@@ -32,7 +32,7 @@ import okhttp3.Request
 private const val DEKT = "https://dekt.aiit.edu.cn"
 
 /** 一个模块的学分：模块名 + 该模块学分 + 认定条数。 */
-data class ScModule(val name: String, val credit: String, val count: String)
+data class ScModule(val name: String, val credit: String, val required: String, val count: String)
 
 /** 我的一条申报：活动名 / 模块 / 类别 / 学分 / 状态。 */
 data class ScApply(
@@ -47,6 +47,8 @@ data class SecondClass(
     val total: String,
     val modules: List<ScModule>,
     val applies: List<ScApply>,
+    /** 要求总学分（必修五块 + 选修那一块的要求，官方顶上那个「0.1 / 4.0」的分母）。 */
+    val required: String = "",
     /** 哪一发没成，界面上原样报出来。空 = 两发都成。 */
     val why: String?,
 ) {
@@ -63,6 +65,9 @@ class CaptureSecondClass(private val school: School) {
     suspend fun load(): SecondClass {
         val ov = get("/app/credit/overview")
         val ap = get("/app/credit/applications", "status" to "")
+        // 顶上那个总学分官方读的是 student-credit（每块给 credit + requiredCredit），
+        // 不是 overview 的 totalCredit —— 装机对出来两个数不一样（这边 0.05，官方 0.1/4.0）。
+        val sc = get("/app/credit/student-credit").getOrNull()?.optJSONObject("data")
         val why = listOfNotNull(
             ov.exceptionOrNull()?.let { "总览没拉到：${it.message}" },
             ap.exceptionOrNull()?.let { "我的申报没拉到：${it.message}" },
@@ -70,14 +75,19 @@ class CaptureSecondClass(private val school: School) {
         val o = ov.getOrNull()
         val data = o?.optJSONObject("data")
         val mods = data.optArray("modules")
+        val scMods = sc.optArray("modules")
         val recs = ap.getOrNull()?.optJSONObject("data").optArray("records")
         return SecondClass(
-            total = data?.optString("totalCredit").orEmpty().ifBlank { "—" },
+            total = sc?.optString("totalCredit").orEmpty()
+                .ifBlank { sumOf(scMods, "credit") },
+            required = sumOf(scMods, "requiredCredit"),
             modules = (0 until mods.length()).mapNotNull { i ->
                 mods.optJSONObject(i)?.let {
                     ScModule(
                         name = it.optString("moduleName"),
-                        credit = it.optString("totalCredit"),
+                        credit = scMods.optJSONObject(i).optString("credit")
+                            .ifBlank { it.optString("totalCredit") },
+                        required = scMods.optJSONObject(i).optString("requiredCredit"),
                         count = it.optInt("recordCount").toString(),
                     )
                 }
@@ -118,7 +128,13 @@ class CaptureSecondClass(private val school: School) {
             }
         }
 
+    /** 那一族给的都是字符串数（"0.1"），按字符串加一遍，保留一位小数。 */
+    private fun sumOf(arr: JSONArray, key: String): String {
+        var t = 0.0
+        for (i in 0 until arr.length()) t += arr.optJSONObject(i).optString(key).toDoubleOrNull() ?: 0.0
+        return if (t == 0.0) "" else "%.1f".format(t)
+    }
+
     /** `data` 里那个数组有时给成 null、有时整个键没有 —— 一律回一个空数组，调用方不判空。 */
-    private fun JSONObject?.optArray(key: String): JSONArray =
-        this?.optJSONArray(key) ?: this?.optJSONObject("data")?.optJSONArray(key) ?: JSONArray()
+    private fun JSONObject?.optArray(key: String): JSONArray = this?.optJSONArray(key) ?: JSONArray()
 }

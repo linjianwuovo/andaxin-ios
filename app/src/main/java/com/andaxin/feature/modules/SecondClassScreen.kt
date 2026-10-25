@@ -58,7 +58,7 @@ fun SecondClassScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(Gap.md))
             }
             Sheet {
-                Labeled(label = "总学分", value = d.total)
+                Labeled(label = "总学分", value = d.total + (if (d.required.isBlank()) "" else " / " + d.required))
             }
             if (d.modules.isNotEmpty()) {
                 Spacer(Modifier.height(Gap.lg))
@@ -71,6 +71,7 @@ fun SecondClassScreen(onBack: () -> Unit) {
                                 // 一个模块一条记录都没有时，服务端那个 totalCredit 是空的 ——
                                 // 原来直接拼，那一行就变成光秃秃一个「（认定 0 条）」，像漏了字。
                                 value = (if (m.credit.isBlank()) "—" else m.credit) +
+                                    (if (m.required.isBlank()) "" else " / " + m.required) +
                                     "（认定 " + m.count + " 条）",
                             )
                             if (i != d.modules.lastIndex) {
