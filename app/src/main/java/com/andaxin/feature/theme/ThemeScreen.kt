@@ -301,35 +301,47 @@ private fun LauncherIconSection() {
     }
 }
 
-/** 预览画的就是真图标那套几何（108 视口、同一批坐标），只是线画粗一点，小格子里才看得清。 */
+/**
+ * 预览画的就是真图标那套几何（108 视口、同一批坐标、同一根线宽），
+ * 但**按桌面那一套裁**：只把 108 中间那扇 72×72 的窗撑满整格。
+ *
+ * 这一条是 10-25 量出来的，不是推的。米11 桌面上那一格 218 px 宽，里面那枚方框（资源里占 56/108）
+ * 实测 170 px —— 52% 变 78%，比值 1.5，正好是 108/72 那个安全区缩放。
+ * 以前预览把整个 108 塞进格子，所以每一枚都比桌面小一圈，他说"大小不一样"就是这个。
+ */
 @Composable
 private fun IconPreview(ic: LauncherIcon, on: Boolean) {
-    val shape = RoundedCornerShape(15.dp)
+    val tile = 58.dp
+    val shape = RoundedCornerShape(26)
     Box(
         Modifier
-            .size(58.dp)
+            .size(tile)
             .clip(shape)
             .background(Color(ic.bg.toInt()))
             .then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(58.dp)) {
-            val s = size.width / 108f
+        Canvas(Modifier.size(tile)) {
+            // 一像素对多少 dp：桌面那套是"72 个视口单位铺满整格"，不是 108 铺满
+            val s = size.width / 72f
+            val dx = -18f * s
+            val dy = -18f * s
             val line = Color(ic.ink.toInt())
             val bar = Color(ic.bar.toInt())
             if (ic.shape == "box") {
                 drawRoundRect(
                     line,
-                    Offset(26f * s, 32f * s),
+                    Offset(dx + 26f * s, dy + 32f * s),
                     Size(56f * s, 44f * s),
                     CornerRadius(8f * s),
                 )
-                drawRect(bar, Offset(30f * s, 46f * s), Size(48f * s, 6f * s))
+                drawRect(bar, Offset(dx + 30f * s, dy + 46f * s), Size(48f * s, 6f * s))
             } else {
-                val w = 14f * s
-                drawLine(line, Offset(27.56f * s, 79.73f * s), Offset(54f * s, 27.79f * s), w, StrokeCap.Round)
-                drawLine(line, Offset(54f * s, 27.79f * s), Offset(78.47f * s, 79.73f * s), w, StrokeCap.Round)
-                drawLine(bar, Offset(40.5f * s, 59.9f * s), Offset(67.5f * s, 59.9f * s), w, StrokeCap.Round)
+                // 线宽照 res 里那份 vector 的 8.86，不再为了"看得清"擅自加粗 —— 加粗就成了另一枚图标
+                val w = 8.86f * s
+                drawLine(line, Offset(dx + 27.56f * s, dy + 79.73f * s), Offset(dx + 54f * s, dy + 27.79f * s), w, StrokeCap.Round)
+                drawLine(line, Offset(dx + 54f * s, dy + 27.79f * s), Offset(dx + 78.47f * s, dy + 79.73f * s), w, StrokeCap.Round)
+                drawLine(bar, Offset(dx + 40.5f * s, dy + 59.9f * s), Offset(dx + 67.5f * s, dy + 59.9f * s), w, StrokeCap.Round)
             }
         }
     }
