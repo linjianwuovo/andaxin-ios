@@ -36,6 +36,13 @@ data class BriefDetail(
      * 加上条目自己带的标记（`isWithdraw`、待销假那一环）。
      */
     val actions: List<Action> = emptyList(),
+    /**
+     * 这一条上校方存着的附图，已经是能直接打开的地址。
+     *
+     * 现在只有报修在用（`fileList` 报修人传的 + `wxlcFileList` 维修过程中传的）。
+     * 空列表就是真没有图，界面上那一块整个不摆。
+     */
+    val images: List<String> = emptyList(),
 )
 
 /**
@@ -95,6 +102,17 @@ sealed class Field {
     data class Choice(override val key: String, override val label: String, val options: List<String>) : Field()
     data class Date(override val key: String, override val label: String) : Field()
     data class Person(override val key: String, override val label: String) : Field()
+    /**
+     * 照片那一格（现在只有报修在用）。值存的是**本机选中的 content uri**，逗号分隔。
+     *
+     * 这里存的不是图本身，也不是已经传上去的文件 id —— 传图是往学校写东西，
+     * 那一发排在最后那颗「提交」后面，由人按。选图、删图这一格都不碰网络。
+     */
+    data class Photos(
+        override val key: String,
+        override val label: String,
+        val max: Int = 10,
+    ) : Field()
 }
 
 /**

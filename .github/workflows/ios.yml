@@ -75,19 +75,29 @@ jobs:
           APP=$(find build/Build/Products -name 'AndaXin.app' -path '*iphonesimulator*' | head -1)
           xcrun simctl install "$UDID" "$APP" || { echo "install 就失败了"; exit 1; }
           xcrun simctl get_app_container "$UDID" com.andaxin.ios data >/dev/null 2>&1 && echo "app 容器在" || echo "app 容器不在（装没装上都有问题）"
-          # macOS runner 没有 GNU timeout（78750fc 那发就是 command not found，launch 根本没跑）。
-          # 后台挂 console + sleep + kill：kill 的是 simctl 客户端，不动 app，
-          # 所以第二张图还能顺便验"是不是我这一掐把 app 带走的"。
-          xcrun simctl launch --console-pty --terminate-running-process "$UDID" com.andaxin.ios > launch-console.log 2>&1 &
-          CPID=$!
-          sleep 12
+          # bf00b9c 那发：同一台机器装上并起了（PID 39247），12 秒后前台还是桌面；console 只有 23 字节
+          # （就是 `com.andaxin.ios: 39247` 那一行），两处崩溃报告目录都翻不到，按进程名查统一日志也是空的。
+          # 也就是它死在 console 挂接之前，而 runner 上 ReportCrash 基本不落文件。
+          # 改用 log stream 兜底：进程为什么没的，RunningBoard/SpringBoard 会写在统一日志里。
+          xcrun simctl spawn "$UDID" log stream --style compact \
+            --predicate 'process == "AndaXin" OR eventMessage CONTAINS[c] "com.andaxin.ios" OR eventMessage CONTAINS[c] "AndaXin"' \
+            > simlog.txt 2>&1 &
+          LPID=$!
+          sleep 2
+          xcrun simctl launch --terminate-running-process "$UDID" com.andaxin.ios; echo "launch rc=$?"
+          sleep 6
           xcrun simctl io "$UDID" screenshot iosApp/simulator-launch.png || true
-          kill "$CPID" 2>/dev/null || true
+          xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i andaxin || echo "6 秒后 launchctl 里已经没有 AndaXin"
+          kill "$LPID" 2>/dev/null || true
           sleep 6
           xcrun simctl io "$UDID" screenshot iosApp/simulator-later.png || true
-          echo "--- launch-console.log（app 自己吐的，最多 80 行）"
-          echo "console 字节: $(wc -c < launch-console.log 2>/dev/null || echo 读不到)"
-          head -80 launch-console.log 2>/dev/null || echo "console 是空的"
+          echo "--- 这个包里嵌的 framework 到底有没有二进制"
+          ls -la "$APP/Frameworks" 2>/dev/null || echo "没有 Frameworks 目录"
+          file "$APP/Frameworks/"*.framework/* 2>/dev/null | head -6 || true
+          echo "--- app 二进制链接了谁"
+          otool -L "$APP/AndaXin" 2>/dev/null | head -12 || echo "读不到 app 二进制"
+          echo "--- 统一日志（最多 140 行，崩因就在这儿）"
+          head -140 simlog.txt 2>/dev/null || echo "log stream 一行都没抓到"
           # 崩溃报告两处都翻：runner 用户目录，和这台模拟器自己的数据目录
           for d in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/CrashReporter"; do
             find "$d" -iname '*AndaXin*' -mmin -20 2>/dev/null | while read -r c; do
@@ -131,7 +141,7 @@ jobs:
           path: |
             iosApp/simulator-launch.png
             iosApp/simulator-later.png
-            launch-console.log
+            simlog.txt
             AndaXin-unsigned.ipa
             shared-framework.zip
           if-no-files-found: warn

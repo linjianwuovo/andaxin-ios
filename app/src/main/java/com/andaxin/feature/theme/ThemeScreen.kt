@@ -1,5 +1,6 @@
 package com.andaxin.feature.theme
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +21,12 @@ import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +50,8 @@ import com.andaxin.core.design.Gap
 import com.andaxin.core.design.Type
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Radius
+import com.andaxin.core.launcher.LauncherIcon
+import com.andaxin.core.launcher.LauncherIcons
 import com.andaxin.core.settings.Appearance
 import com.andaxin.core.settings.BarMaterial
 import com.andaxin.core.settings.DayNight
@@ -208,6 +216,10 @@ fun ThemeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         }
 
         Spacer(Modifier.height(Gap.xl))
+        GroupTitle("启动图标")
+        LauncherIconSection()
+
+        Spacer(Modifier.height(Gap.xl))
         GroupTitle("玻璃参数")
         Sheet {
             SliderRow("模糊度", draft.blur, commit) { draft = draft.copy(blur = it) }
@@ -222,6 +234,109 @@ fun ThemeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             )
         }
         Spacer(Modifier.height(Gap.xxl))
+    }
+}
+
+/**
+ * 「启动图标」那一格：五枚可选，全是尖顶 A 那套配色（出厂立着的是蓝底青杠）。
+ *
+ * 点一下就换 —— 这一步动的是系统里的组件开关（见 core/launcher/LauncherIcons.kt），
+ * 不碰学校、不碰网络，所以没上连按两次；但失败一定把原因贴出来，不闷声。
+ */
+@Composable
+private fun LauncherIconSection() {
+    val ink = LocalInk.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var now by remember { mutableStateOf(LauncherIcons.current(ctx)) }
+    var why by remember { mutableStateOf<String?>(null) }
+
+    /*
+     * 每次回到这一屏都从系统重读一次"现在立着的是哪枚"。
+     * 只 remember 一次会骗人：他在桌面上动过、或者换过一次之后再看这一格，
+     * 圈可能还圈在旧的那枚上（10-25 他截图里就是这么个错位）。
+     */
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        now = LauncherIcons.current(ctx)
+    }
+
+    Sheet {
+        LauncherIcons.ALL.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(Gap.lg)) {
+                row.forEach { ic ->
+                    val on = ic.key == now.key
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.pressClick(shrink = false) {
+                            if (on) return@pressClick
+                            LauncherIcons.apply(ctx, ic).fold(
+                                onSuccess = {
+                                    now = ic
+                                    why = "已换上「${ic.label}」。桌面那枚一般马上变；" +
+                                        "多出来那枚旧的是桌面缓存，重启桌面就没了。"
+                                },
+                                onFailure = { why = "没换成：${it.message ?: it.javaClass.simpleName}" },
+                            )
+                        },
+                    ) {
+                        IconPreview(ic, on)
+                        Spacer(Modifier.height(Gap.xs))
+                        Text(
+                            ic.label,
+                            fontSize = Type.tiny,
+                            color = if (on) ink.strong else ink.faint,
+                            fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Gap.md))
+        }
+        Text(
+            text = why ?: "换的是桌面那枚和最近任务里那枚。MIUI 这类桌面换完会多留一枚旧的" +
+                "（旧那枚的名字可能还是以前那个），系统里其实只有一条入口 —— 重启桌面或重启手机就干净了。",
+            fontSize = Type.micro,
+            color = if (why == null) ink.faint else ink.muted,
+            lineHeight = Type.metaLine,
+        )
+    }
+}
+
+/**
+ * 这一格画的就是桌面上那一枚会长的样子 —— 同一批数、同一个裁法。
+ *
+ * 桌面不是把 108 的画布整个铺满一格，而是取中间那扇 72×72 的窗放大 1.5 倍。这条是量出来的：
+ * 米11 那一格 218 px 宽、里面那枚方框（资源里占 56/108）实测 170 px，52 变 78（百分比），比值正好 1.5。
+ * 所以预览也按这扇窗画。而"预览那个大小"是他挑图标时看到的那个：要外面照里面来，
+ * 动的是 `res/drawable/ic_launcher_fg_*.xml` 那六份的坐标（缩到 0.665），不是把预览改成桌面上那个。
+ */
+@Composable
+private fun IconPreview(ic: LauncherIcon, on: Boolean) {
+    val tile = 58.dp
+    val shape = RoundedCornerShape(26)
+    Box(
+        Modifier
+            .size(tile)
+            .clip(shape)
+            .background(Color(ic.bg.toInt()))
+            .then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(tile)) {
+            // 一像素对多少 dp：桌面那套是"72 个视口单位铺满整格"，不是 108 铺满
+            val s = size.width / 72f
+            val dx = -18f * s
+            val dy = -18f * s
+            val line = Color(ic.ink.toInt())
+            val bar = Color(ic.bar.toInt())
+            // 数要和 res 里那五份 vector 一模一样（同一批坐标、同一根线宽 9.4）。
+            // 那批坐标是绕中心缩过一遍的（0.665）：桌面会把 108 中间 72 那扇窗放大 1.5 倍，
+            // 缩完再放大，落到桌面上才是这一排预览原来那个大小 —— 他要的是外面照里面改，
+            // 不是把里面改成外面那样，所以动的是资源，这里只是跟着抄。
+            val w = 9.4f * s
+            drawLine(line, Offset(dx + 36.42f * s, dy + 71.11f * s), Offset(dx + 54f * s, dy + 36.57f * s), w, StrokeCap.Round)
+            drawLine(line, Offset(dx + 54f * s, dy + 36.57f * s), Offset(dx + 70.25f * s, dy + 71.11f * s), w, StrokeCap.Round)
+            drawLine(bar, Offset(dx + 45.02f * s, dy + 57.92f * s), Offset(dx + 62.98f * s, dy + 57.92f * s), w, StrokeCap.Round)
+        }
     }
 }
 

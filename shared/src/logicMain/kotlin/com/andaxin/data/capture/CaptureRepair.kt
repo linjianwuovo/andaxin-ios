@@ -65,6 +65,9 @@ import com.andaxin.core.json.JSONObject
  */
 private const val REPAIR = "https://repair.aiit.edu.cn/bxjlSjd"
 
+/** 附图那种"校方给的根路径"要挂的是站点根，不是 `bxjlSjd` 这一层（见 [CaptureRepairDetail.fileUrls]）。 */
+private const val REPAIR_ROOT = "https://repair.aiit.edu.cn"
+
 /** 报修那一族只认 H5 驼峰身份，且 `userName` 不参与校验，所以直接复用 `postH5`。 */
 private suspend fun School.repair(method: String, vararg fields: Pair<String, String>): Result<JSONObject> =
     postH5("$REPAIR/$method.do", *fields)
@@ -72,6 +75,31 @@ private suspend fun School.repair(method: String, vararg fields: Pair<String, St
 /** 同包的表单那一半（`CaptureRepairForm`）也要走这一条，所以留一个 internal 的口子。 */
 internal suspend fun School.repairJson(method: String, vararg fields: Pair<String, String>): Result<JSONObject> =
     repair(method, *fields)
+
+/**
+ * 传一张图，换回学校给的那个文件 id —— 提交时那一串 id 拼进 `tpId`。
+ *
+ * 【取证 · ① 官方前端原文，见 `docs/接入清单.md` 一点三之二十八】
+ * `ABILITY.request.post("/api/bxjlSjd/uploadForSjd.do?timestap=" + Date.now(), {fileImg: <dataURL>}, false)`，
+ * 成功响应读 `t.data.file.id` / `t.data.file.fileFullName`。三条要点：
+ * ① 不是 multipart，图整个当 base64 数据 URL 塞进 `fileImg` 一个字段，身份还是这一族那两键（`postH5` 给）；
+ * ② URL 上那个 `timestap` 是学校自己拼错的，照抄，别"顺手改成 timestamp"；
+ * ③ 提交时 `tpId = imgList.map(n => n.id).join(",")`，所以这里只留 `id`。
+ *
+ * **这一发我们自己一次没打过** —— 上面是"官方前端就是这么发的"，不是"我发过、学校答了"。
+ * 所以形状认两种（`data.file` 和这一族别的口那种 `data.data.file`），两种都没有就**报错**，
+ * 不能当"传成功了只是没给 id"：那样单子会带着空 `tpId` 发出去，照片静默丢掉。
+ */
+internal suspend fun School.repairUpload(dataUrl: String): Result<String> =
+    postH5("$REPAIR/uploadForSjd.do?timestap=${com.andaxin.core.concurrency.nowMillis()}", "fileImg" to dataUrl)
+        .mapCatching { root ->
+            if (!root.optBoolean("flag", false)) throw Exception(denied(root))
+            val file = root.optJSONObject("data")?.optJSONObject("file")
+                ?: root.optJSONObject("data")?.optJSONObject("data")?.optJSONObject("file")
+                ?: throw Exception("学校回了成功，但响应里没有那层 `file`（形状和取证那份不一样，不敢当传上了）")
+            file.optString("id").takeIf { it.isNotBlank() }
+                ?: throw Exception("学校给了 `file`，可里面没有 `id`，`tpId` 拼不出来")
+        }
 
 class CaptureRepairList(private val school: School) : ListSource {
     override suspend fun rows(): Result<List<BriefRow>> {
@@ -166,8 +194,27 @@ class CaptureRepairDetail(private val school: School) : DetailSource {
                 fields = fields,
                 paragraphs = paragraphs,
                 actions = actionsOf(d),
+                images = fileUrls(d, "fileList") + fileUrls(d, "wxlcFileList"),
             ),
         )
+    }
+
+    /**
+     * 校方那一串附图 → 能直接打开的地址。
+     *
+     * 【取证 · ① 读的前端代码】H5 那边 `imgList.push({id: t.data.file.id, src: t.data.file.fileFullName})`
+     * —— 当 `<img src>` 用的就是 `fileFullName` 这一个键（`bxjs/6.*.js` @18473）。
+     * 它那个页面挂在 repair 站上，所以相对路径是按那一台解析的 —— 这里给相对路径补的前缀就是它，
+     * **这一条是推出来的，没有实样**：本账号三张单 `fileList` 全 `[]`、`wxlcFileList` 全 `null`，
+     * 里面到底给的是绝对地址还是根路径，得等一张真带图的单。打不开时界面明写"这张没取到"，不空一块。
+     */
+    private fun fileUrls(d: JSONObject, key: String): List<String> {
+        val arr = d.optJSONArray(key) ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.optString("fileFullName")?.takeIf { it.isNotBlank() }?.let { f ->
+                if (f.startsWith("http")) f else "$REPAIR_ROOT/" + f.trimStart('/')
+            }
+        }
     }
 
     /**

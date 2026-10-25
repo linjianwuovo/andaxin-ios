@@ -106,15 +106,17 @@ fun WebScreen(encoded: String, title: String, onBack: () -> Unit) {
                 Text("地址是空的，进不来。", fontSize = Type.body, color = ink.faint, modifier = Modifier.padding(Gap.lg))
                 return@Column
             }
-            // 这一句一直挂着，不在页面动起来之后收起来：它解释的是"为什么点进来是个登录页"，
-            // 摘掉之后就只剩他自己猜了
-            Sheet(modifier = Modifier.padding(horizontal = Gap.screen, vertical = Gap.sm)) {
-                Text(
-                    "这是学校自己的页面，可能要你再登录一次。",
-                    fontSize = Type.micro,
-                    color = ink.faint,
-                    lineHeight = Type.metaLine,
-                )
+            // 这一句只对**校内页面**说：它解释的是"为什么点进来是个登录页"。
+            // 关于页那颗「release 页」开的是我们自己的 GitHub 仓，挂这句就成了胡说（10-25 凌晨那张截图）。
+            if (android.net.Uri.parse(url).host.orEmpty().let { isSchoolHost(it) }) {
+                Sheet(modifier = Modifier.padding(horizontal = Gap.screen, vertical = Gap.sm)) {
+                    Text(
+                        "这是学校自己的页面，可能要你再登录一次。",
+                        fontSize = Type.micro,
+                        color = ink.faint,
+                        lineHeight = Type.metaLine,
+                    )
+                }
             }
             Box(Modifier.fillMaxSize()) {
                 AndroidView(
@@ -132,9 +134,12 @@ fun WebScreen(encoded: String, title: String, onBack: () -> Unit) {
                                     view: WebView?,
                                     request: WebResourceRequest?,
                                 ): Boolean {
-                                    // 跳出学校域名的链接不放行：那条路尽头多半是"去装官方 App"
+                                    // 跳出容器的两条规矩：校内那几域放行（H5 里跳来跳去是正常路径），
+                                    // 我们自己那个 GitHub 仓也放行 —— 关于页那颗「release 页」开的就是它，
+                                    // 页面上"浏览全部 release / 看附件"那些链接再点下去不许变死路。
+                                    // 其余域名不放行：那条路尽头多半是"去装官方 App"。
                                     val host = request?.url?.host.orEmpty()
-                                    return host.isNotEmpty() && !isSchoolHost(host)
+                                    return host.isNotEmpty() && !(isSchoolHost(host) || isOurReleaseHost(host))
                                 }
 
                                 override fun onPageStarted(view: WebView?, url: String?, picture: Bitmap?) {
@@ -176,3 +181,7 @@ fun WebScreen(encoded: String, title: String, onBack: () -> Unit) {
 private fun isSchoolHost(host: String): Boolean =
     host.endsWith("aiit.edu.cn") || host.endsWith("fifedu.com") ||
         host.endsWith("17wanxiao.com") || host.endsWith("weixin.qq.com")
+
+/** 我们自己发版那两处：release 页在 github.com，附件真身重定向到 githubusercontent.com。 */
+private fun isOurReleaseHost(host: String): Boolean =
+    host.endsWith("github.com") || host.endsWith("githubusercontent.com")

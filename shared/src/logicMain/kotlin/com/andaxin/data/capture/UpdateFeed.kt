@@ -18,7 +18,9 @@ import kotlinx.datetime.toLocalDateTime
  *
  * 【渠道 · 10-23 深夜现打定死】读的是 GitHub 的 release 订阅 `releases.atom`，不是 API：
  * `GET https://github.com/linjianwuovo/andaxin/releases.atom` 回 10 条 `<entry>`，
- * `title` 就是 tag（`v0.8.27` / `v0.8.27-beta`），`updated` 是发布时间。
+ * `title` **是 release 的名字、不是 tag** —— tag 只能从 `<link rel="alternate">` 那条页面
+ * 地址末尾取（10-25 凌晨踩过这个雷：拿 title 当 tag 拼出来的下载链和页面链都指向不存在的
+ * 路径，一个下不动、一个 GitHub 回 404）。`updated` 是发布时间。
  * 为什么不用 `api.github.com`：**未认证限流一小时 60 次、按出口 IP 算** ——
  * 我拿代理那条线（公共出口 203.10.99.51）试，直接回 `API rate limit exceeded`；
  * 手机走共享出口或 VPN 节点时会经常撞这个 403。atom 那条没这个限，所以只用它。
@@ -76,7 +78,15 @@ class UpdateFeed {
         }
         var best: Release? = null
         for (entry in ENTRIES.findAll(text)) {
-            val tag = ENTRY_TITLE.find(entry.value)?.groupValues?.get(1)?.trim()?.unescape().orEmpty()
+            /*
+             * atom 里 `<title>` 是 **release 的名字**（我发版时填的是 `0.8.30`），不是 tag。
+             * tag 得从那条 `<link rel="alternate">` 的页面地址末尾取。
+             * 以前这里拿 title 当 tag，于是两条链接都拼成 `/releases/tag/0.8.30-beta` ——
+             * 真 tag 是 `v0.8.30-beta`，那一页根本不存在：所以「下载」每次都失败、
+             * 「release 页」点进去是 GitHub 的 404（他 10-25 凌晨那两张截图）。
+             */
+            val page = ENTRY_LINK.find(entry.value)?.groupValues?.get(1)?.unescape().orEmpty()
+            val tag = page.substringAfterLast('/').trim()
             if (tag.isBlank()) continue
             val isBeta = tag.endsWith("-beta")
             if (isBeta != beta) continue
@@ -87,17 +97,17 @@ class UpdateFeed {
                 date = ENTRY_DATE.find(entry.value)?.groupValues?.get(1)?.substringBefore('T').orEmpty(),
                 apkUrl = "$BASE/releases/download/$tag/" +
                     if (isBeta) "andaxin-$version-beta.apk" else "andaxin-$version-release.apk",
-                pageUrl = "$BASE/releases/tag/$tag",
+                pageUrl = page,
             )
-            if (best == null || compare(r.version, best!!.version) > 0) best = r
+            if (best == null || compareVersion(r.version, best!!.version) > 0) best = r
         }
         val found = best
             ?: return Result.failure(Exception("订阅里没找到这条线的 release（beta 线还没发过版？）"))
-        return Result.success(UpdateCheck(found, compare(found.version, plainOf(current)) > 0, now()))
+        return Result.success(UpdateCheck(found, versionNewer(found.version, current), now()))
     }
 
     /** `0.8.9` 要比 `0.8.27` 小 —— 按段比数字，不是比字符串。 */
-    private fun compare(a: String, b: String): Int {
+    private fun compareVersion(a: String, b: String): Int {
         val x = a.split('.').map { it.toIntOrNull() ?: 0 }
         val y = b.split('.').map { it.toIntOrNull() ?: 0 }
         for (i in 0 until maxOf(x.size, y.size)) {
@@ -116,7 +126,7 @@ class UpdateFeed {
         /** GitHub 不看 UA，但我们也不冒充学校的壳（那条 `okhttp/4.9.3` 是给校方那几发用的）。 */
         const val UA = "andaxin-update-check"
         val ENTRIES = Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL)
-        val ENTRY_TITLE = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
+        val ENTRY_LINK = Regex("<link[^>]*rel=\"alternate\"[^>]*href=\"([^\"]+)\"")
         val ENTRY_DATE = Regex("<updated>(.*?)</updated>")
     }
 }
@@ -126,6 +136,21 @@ private fun hhmm(t: LocalDateTime): String =
         (if (t.dayOfMonth < 10) "0" else "") + t.dayOfMonth + " " +
         (if (t.hour < 10) "0" else "") + t.hour + ":" +
         (if (t.minute < 10) "0" else "") + t.minute
+
+/**
+ * 订阅里那版比本机这版新吗。两边的 `-beta` 尾巴先抹掉 ——
+ * 手上是 `0.8.29-beta` 而 beta 线最新也是 `0.8.29-beta` 时，那是"已是最新"，不是有新版。
+ */
+fun versionNewer(latest: String, current: String): Boolean {
+    fun parts(v: String) = plainOf(v).split('.').map { it.toIntOrNull() ?: 0 }
+    val x = parts(latest)
+    val y = parts(current)
+    for (i in 0 until maxOf(x.size, y.size)) {
+        val d = (x.getOrElse(i) { 0 }) - (y.getOrElse(i) { 0 })
+        if (d != 0) return d > 0
+    }
+    return false
+}
 
 /** 版本名去掉 `-beta` 尾巴；界面上比"是不是同一版"用这个。 */
 fun plainOf(v: String): String = v.removeSuffix("-beta").trim()

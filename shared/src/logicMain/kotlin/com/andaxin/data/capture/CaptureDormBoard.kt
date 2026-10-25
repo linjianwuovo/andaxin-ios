@@ -98,6 +98,16 @@ private fun JSONObject.clean(key: String): String {
     return if (v == null || v == JSONObject.NULL) "" else v.toString().trim()
 }
 
+/** 历史那两节。分开装是因为界面上它们是两栏，混成一条列表就分不回去了。 */
+data class DormHistory(val dorm: List<DormTask>, val subject: List<DormTask>) {
+    val all: List<DormTask> get() = dorm + subject
+    val isEmpty: Boolean get() = dorm.isEmpty() && subject.isEmpty()
+
+    companion object {
+        val EMPTY = DormHistory(emptyList(), emptyList())
+    }
+}
+
 /** 一屏要的一次拉齐的东西。 */
 data class DormBoard(
     val month: String,
@@ -106,13 +116,22 @@ data class DormBoard(
     val dormTasks: List<DormTask>,
     val subjectTasks: List<DormTask>,
     val staticsWhy: String?,
+    /**
+     * 这一月的**历史**签到记录。
+     *
+     * 上面那两列只管"今天的待办"：`pageStudentSignIn` 不回历史，
+     * 所以点了月历上过去某一天，光靠那两列永远是空的 —— 他这次问的就是这个。
+     * 历史走 `collectionStudentPage` / `app/signin/queryPage`，见 [historyRows]。
+     * 空列表有两种意思（学校不认区间 / 这月真没有），所以只拿来做加法，不拿来下结论。
+     */
+    val history: DormHistory = DormHistory.EMPTY,
 )
 
 class CaptureDormBoard(private val school: School, private val session: SessionStore) {
 
     /**
-     * 一次拉四发（概览、月历、查寝任务、主题签到任务），任何一发挂了都不拖垮整屏：
-     * 概览挂了界面说"统计没拿到"，任务挂了说任务没拿到，各说各的。
+     * 一次拉五发（概览、月历、今天的查寝、今天的主题签到、这一月的历史），
+     * 任何一发挂了都不拖垮整屏：概览挂了界面说"统计没拿到"，任务挂了说任务没拿到，各说各的。
      */
     suspend fun load(date: LocalDate = com.andaxin.core.concurrency.todayLocalDate()): Result<DormBoard> {
         val code = session.identity()?.userCode.orEmpty()
@@ -135,6 +154,7 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
             }
             val dorm = async { page("/app/dorm/pageStudentSignIn", code, "3") }
             val subject = async { page("/app/signinSubject/pageStudentSignIn", code, "2") }
+            val history = async { historyRows(first, last) }
             val s = statics.await()
             remember(dorm.await() + subject.await())
             Result.success(
@@ -162,6 +182,7 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
                     }.orEmpty(),
                     dormTasks = dorm.await(),
                     subjectTasks = subject.await(),
+                    history = history.await(),
                     staticsWhy = if (s.getOrNull()?.optJSONObject("data") == null) {
                         s.exceptionOrNull()?.message ?: "签到统计那条口没回数据"
                     } else null,
@@ -285,14 +306,56 @@ class CaptureDormBoard(private val school: School, private val session: SessionS
         return Result.success(Unit)
     }
 
+    /**
+     * 某一天的签到记录（查寝 + 主题签到两节）。**点月历上过去某一天要走这一发**。
+     *
+     * 为什么不能沿用 [load] 里那两列：`pageStudentSignIn` 只管当天待办，历史那批它一条都不回 ——
+     * 他旧项目 `checkin/data/CheckinRepository.kt` 的注释里把这条写死了，连症状都记着：
+     * "日历有红点、统计有数字，列表却是空的"。官方 H5（fdygl swp-app 的 /studentEvent/bedCheck）
+     * 「历史查寝任务」那个 tab 走的是 `app/dorm/collectionStudentPage`，参数照他那一份：
+     * `type:"2"` + `taskMajorType:"3"` + 单日 `startTime`。主题签到那节是 `app/signin/queryPage`，
+     * 多一个 `releaseStatus:"2"`（已发布/已结束）。这两发的参数名与响应形状都出自他跑通的那份。
+     */
+    suspend fun historyOn(date: String): DormHistory = historyRows(date, date)
+
+    /**
+     * 一段区间内的历史记录。给月历那些点上色用。
+     *
+     * 【没验过的地方】他那份是**按单日**发的（官方那个 tab 就是一天一页），
+     * 我这里多塞一个 `endTime` 想一次拿整月 —— 学校认不认这个区间没有一手证据。
+     * 认，月历就整月有色；不认，最坏是只回 `startTime` 那一天，其余日子退回"没记录"那颗灰点，
+     * 不会把没签过的日子画成签过 —— 所以这一发只拿来做加法。
+     */
+    suspend fun historyRows(from: String, to: String): DormHistory {
+        // 两发各用一个体：共用一个 JSONObject 会把查寝那儿的 taskMajorType 漏给主题签到那一族
+        val dorm = pageWith(
+            "/app/dorm/collectionStudentPage",
+            JSONObject()
+                .put("pageNum", 1).put("pageSize", 60)
+                .put("type", "2").put("taskMajorType", "3")
+                .put("startTime", from).put("endTime", to),
+        )
+        val subject = pageWith(
+            "/app/signin/queryPage",
+            JSONObject()
+                .put("pageNum", 1).put("pageSize", 60)
+                .put("type", "2").put("releaseStatus", "2")
+                .put("startTime", from).put("endTime", to),
+        )
+        return DormHistory(dorm, subject)
+    }
+
     /** 任务列表那一族：数组挂根节点 `rows`，`data` 是 null。 */
-    private suspend fun page(path: String, code: String, majorType: String): List<DormTask> {
-        val root = school.postJson(
-            "$FDY$path",
+    private suspend fun page(path: String, code: String, majorType: String): List<DormTask> =
+        pageWith(
+            path,
             JSONObject()
                 .put("pageNum", 1).put("pageSize", 30)
                 .put("createBy", code).put("taskMajorType", majorType),
-        ).getOrNull() ?: return emptyList()
+        )
+
+    private suspend fun pageWith(path: String, body: JSONObject): List<DormTask> {
+        val root = school.postJson("$FDY$path", body).getOrNull() ?: return emptyList()
         val rows = root.optJSONArray("rows") ?: JSONArray()
         return (0 until rows.length()).mapNotNull { i ->
             rows.optJSONObject(i)?.let { o ->

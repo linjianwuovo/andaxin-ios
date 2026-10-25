@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +74,8 @@ fun DormBoardScreen(open: (String) -> Unit, onBack: () -> Unit) {
     var why by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(true) }
     var picked by remember { mutableStateOf<String?>(null) }
+    /** 点某一天时现翻的那一天的记录；null = 还没翻完（那一句"这一天没有"得等它，不然先说假话） */
+    var dayHistory by remember { mutableStateOf<com.andaxin.data.capture.DormHistory?>(null) }
     /**
      * 进屏拉一次、下拉再拉一次。
      *
@@ -88,6 +92,16 @@ fun DormBoardScreen(open: (String) -> Unit, onBack: () -> Unit) {
     }
     // 每次回到这一屏都重拉（从签到详情签完返回时，列表上的"没签"要跟着变）
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { scope.launch { reload() } }
+
+    /*
+     * 挑了哪天就现翻哪天。整月那一发（`historyRows`）是拿 `endTime` 试出来的、学校认不认没验过，
+     * 所以这一发按单日单独再打一次 —— 那一发是他旧项目跑通过的参数，点过去的日子必须有真数据。
+     */
+    LaunchedEffect(picked) {
+        val day = picked      // picked 是委托属性，判空后不能直接智能转换，先落一个局部量
+        dayHistory = null
+        if (day != null) dayHistory = graph.dormBoard.historyOn(day)
+    }
 
     ScaffoldPage(title = "查寝签到", onBack = onBack, onRefresh = { reload() }) {
         val b = board
@@ -151,15 +165,31 @@ fun DormBoardScreen(open: (String) -> Unit, onBack: () -> Unit) {
                 Spacer(Modifier.height(Gap.md))
                 Hairline()
                 Spacer(Modifier.height(Gap.md))
-                MonthCalendar(YearMonth.parse(b.month), b.days, picked) { picked = it }
+                MonthCalendar(
+                    YearMonth.parse(b.month), b.days,
+                    // 点上色读的是"这天签没签"：今天那两列 + 这一月的历史，谁有算谁
+                    b.dormTasks + b.subjectTasks + b.history.all,
+                    picked,
+                ) { picked = it }
             }
             Spacer(Modifier.height(Gap.md))
         }
 
         val tasks = b?.dormTasks.orEmpty()
         val subject = b?.subjectTasks.orEmpty()
-        val shownTasks = tasks.filter { picked == null || it.date == picked }
-        val shownSubject = subject.filter { picked == null || it.date == picked }
+        /*
+         * 点了过去某一天，那一天的记录在历史那一发里 —— 今天那两列压根没有它
+         * （`pageStudentSignIn` 只管当天待办），所以以前点任何过去的日子都是"这一天没有"。
+         * 现在三处合起来看：今天的两列 + 整月历史（拉得到就有）+ 现翻的那一天（点谁翻谁）。
+         */
+        val dayPending = picked != null && dayHistory == null
+        val shownTasks = if (picked == null) tasks else
+            (tasks + b?.history?.dorm.orEmpty() + dayHistory?.dorm.orEmpty())
+                .filter { it.date.substringBefore(' ') == picked }.distinctBy { it.dateId }
+        val shownSubject = if (picked == null) subject else
+            (subject + b?.history?.subject.orEmpty() + dayHistory?.subject.orEmpty())
+                .filter { it.date.substringBefore(' ') == picked }.distinctBy { it.dateId }
+        val dayText = if (dayPending) "正在翻这一天的记录…" else "这一天没有。"
 
         if (picked != null) {
             Row(horizontalArrangement = Arrangement.spacedBy(Gap.sm)) {
@@ -170,10 +200,14 @@ fun DormBoardScreen(open: (String) -> Unit, onBack: () -> Unit) {
             Spacer(Modifier.height(Gap.md))
         }
 
-        // 只有真拿到过这一板的任务，才有资格说"这个月没有"
+        // 只有真拿到过这一板的任务，才有资格说"没有"。
+        // 今天那两列只管当天，所以没挑日子时说的是"今天没有"，不再替整月下结论
+        // （以前 `subjectTasks` 空就写"这个月没有主题签到"，而它压根只回了当天那一发）。
         if (b != null) {
-            TaskSection("查寝签到", shownTasks, tasks.isEmpty(), open, "这个月没有查寝任务。")
-            TaskSection("主题签到", shownSubject, subject.isEmpty(), open, "这个月没有主题签到。")
+            val emptyDorm = if (picked != null) dayText else "今天没有要签的。这一月签过哪几天，点月历上的日子翻。"
+            val emptySubject = if (picked != null) dayText else "今天没有主题签到。这一月的记录同样点日子翻。"
+            TaskSection("查寝签到", shownTasks, open, emptyDorm)
+            TaskSection("主题签到", shownSubject, open, emptySubject)
         }
 
         Spacer(Modifier.height(Gap.md))
@@ -208,17 +242,30 @@ private fun StatCell(label: String, value: Int, color: Color, modifier: Modifier
 /**
  * 月历。周一开头（校方那张表就是周一开头），有任务的日子下面一个点，今天圈一个底。
  * 没任务的日子也允许点 —— 点了看到的是"这天没有任务"，那是一句实话，不是死路。
+ *
+ * 【点为什么分三色】点以前只判"这天有没有任务"（`listDateCheck` 给的 `taskNum`），
+ * 签没签压根没读 —— 一个月签了 17 次，扫一眼月历和一次没签长得一样。
+ * 现在这个点读的是 `pageStudentSignIn` 那两节里的 `executionedStatus`（"1"=已签）：
+ *   绿 = 这天签过了（跟顶上「已签」那个数同色）
+ *   蓝 = 这天有任务还没签（跟「未签」同色）
+ *   灰 = 校方月历说这天有任务，但签到列表里没回这一条 —— 那是没问到，不是没签，不许画成蓝点
+ * 同一天两条任务时有一条没签就算没签。
  */
 @Composable
 private fun MonthCalendar(
     month: YearMonth,
     days: List<com.andaxin.data.capture.DormDay>,
+    tasks: List<DormTask>,
     picked: String?,
     onPick: (String?) -> Unit,
 ) {
     val ink = LocalInk.current
     val today = LocalDate.now()
     val byDate = days.associateBy { it.date }
+    // 按天归一次签到状态：一条没签就整天真没签；一条都没有 = 状态没回，不是"没签"。
+    // 截一下 taskDate：校方偶尔给 "2026-10-22 00:00:00" 那种带时分的，不截就整天对不上日历
+    val signedByDate = tasks.groupBy { it.date.substringBefore(' ') }
+        .mapValues { (_, t) -> t.all { x -> x.signed } }
     val first = month.atDay(1)
     // java.time 的 dayOfWeek：周一=1…周日=7，这里要的是"前面空几格"
     val lead = first.dayOfWeek.value - 1
@@ -270,14 +317,41 @@ private fun MonthCalendar(
                             },
                             textAlign = TextAlign.Center,
                         )
-                        // 点放在数字下面：一行里"哪天有任务"就是靠这一排点扫出来的
+                        // 点放在数字下面：一行里"哪天签过、哪天还欠着"就是靠这一排点扫出来的
                         Spacer(Modifier.height(1.dp))
+                        val signed = signedByDate[iso]
                         Box(
                             Modifier
                                 .size(4.dp)
-                                .background(if (has && !isFuture) Palette.Amber else Color.Transparent, CircleShape),
+                                .background(
+                                    when {
+                                        !has || isFuture -> Color.Transparent
+                                        signed == null -> ink.ghost
+                                        signed -> if (ink.dark) Palette.NightTeal else Palette.TealInk
+                                        else -> MaterialTheme.colorScheme.primary
+                                    },
+                                    CircleShape,
+                                ),
                         )
                     }
+                }
+            }
+        }
+    }
+
+    // 三种点各是什么意思，在月历底下一句说清：绿蓝两色跟顶上那两个数是同源的，不用另记一套
+    if (days.any { it.taskNum > 0 }) {
+        Spacer(Modifier.height(Gap.sm))
+        Row(horizontalArrangement = Arrangement.spacedBy(Gap.lg)) {
+            listOf(
+                (if (ink.dark) Palette.NightTeal else Palette.TealInk) to "已签",
+                MaterialTheme.colorScheme.primary to "未签",
+                ink.ghost to "没记录",
+            ).forEach { (c, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(4.dp).background(c, CircleShape))
+                    Spacer(Modifier.width(Gap.xs))
+                    Text(label, fontSize = Type.micro, color = ink.faint)
                 }
             }
         }
@@ -288,7 +362,6 @@ private fun MonthCalendar(
 private fun TaskSection(
     title: String,
     tasks: List<DormTask>,
-    emptyAll: Boolean,
     open: (String) -> Unit,
     emptyText: String,
 ) {
@@ -302,7 +375,7 @@ private fun TaskSection(
     )
     if (tasks.isEmpty()) {
         Text(
-            text = if (emptyAll) emptyText else "这一天没有。",
+            text = emptyText,
             fontSize = Type.body,
             color = ink.faint,
             modifier = Modifier.padding(bottom = Gap.sm),

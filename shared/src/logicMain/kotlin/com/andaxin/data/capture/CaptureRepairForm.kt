@@ -37,12 +37,29 @@ import com.andaxin.core.json.JSONObject
  * **提交 10-23 夜里接上了**（见下面 [submit]）：十个键的形状是 `xqdm/lyId/qyfjh/xxdz/sjh/gzms/xm/userCode/tpId/bxlx`
  * ＋可选 `kssj/jssj`，姓名和手机号提交时现问 `getSjhForSjd`。它是写口，界面上连按两次才发，
  * 按完只报两个字，成没成回「我的报修」那一栏数 —— 判据照他旧仓跑通的那一份。
- * `tpId` 现在恒为空串：官方那份是 `imgList.map(n => n.id).join(",")`，照片先过一发 `uploadForSjd` 换回 `data.file.id`。
- * 那一发**不是 multipart** —— 图压缩后整个当 base64 数据 URL 塞进 `fileImg` 一个字段，
- * URL 上还挂 `?timestap=<毫秒>`（学校拼错的那三个字母照抄）。原文出处见 `docs/接入清单.md` 一点三之二十八。
- * `loginType` 不发：官方那发带它，可我们没验过不给会怎样，而读那一族去掉它照样回全量。
+ * `tpId` 那一串 10-25 接上了：照片先过一发 `uploadForSjd`（见 `CaptureRepair.repairUpload`）换回 `data.file.id`，
+ * 提交时 `tpId = ids.joinToString(",")`。**传图排在「提交」之后**——选图、删图那一格不碰网络，
+ * 往学校传东西这一发跟着这张单一起由人按。任何一张传失败，整张单就不发（不然会发出去一张没照片的单）。
+ * `loginType` 不发：官方那发带它，可它的**值**我们从没读到过（bundle 里只看见这个键名），
+ * 而读那一族去掉它照样回全量 —— 编一个值发过去比不发更容易出错。
  */
-class CaptureRepairForm(private val school: School) : FormSource {
+/**
+ * 一张单最多几张图 —— 校方那一版的闸，取证的实样里 H5 也是这个数。
+ * 定在共享层是因为两端都要守：安卓那台 `RepairPhotos` 选图时读它，这边提交前也按它拦。
+ */
+const val REPAIR_MAX_PHOTOS = 10
+
+class CaptureRepairForm(
+    private val school: School,
+    /**
+     * 把本机选中的那张图变成官方要的 base64 数据 URL。安卓那台是 `RepairPhotos.encode(context, uri)`
+     * —— BitmapFactory 降采样、EXIF 转正都是安卓物，所以留在 app，由装配点注进来。
+     * 没接这条缝的端（iOS 现在就是这样）碰到带图的单就明确失败，不发一张没照片的单冒充交齐了。
+     */
+    private val encodePhoto: suspend (String) -> Result<String> = {
+        Result.failure(Exception("这一端还没接传图：这张单请把照片去掉再交"))
+    },
+) : FormSource {
 
     /** 界面上给人选的是名字，提交要发的是 id —— 这两张对照表在 [spec] 里建、在 [submit] 里用。 */
     private class Shape(
@@ -80,6 +97,7 @@ class CaptureRepairForm(private val school: School) : FormSource {
                 add(Field.Choice(KEY_END, "期望上门·结束", times))
             }
             add(Field.Text(KEY_DESC, "问题描述", hint = "哪里坏了、什么时候开始的，越具体越好"))
+            add(Field.Photos(KEY_PHOTOS, "现场照片", REPAIR_MAX_PHOTOS))
         }
         shape = Shape(
             typeOptions.toMap(),
@@ -89,8 +107,9 @@ class CaptureRepairForm(private val school: School) : FormSource {
             FormSpec(
                 title = "新建报修",
                 fields = fields,
-                footnote = "照片那一栏本机还没做（要往学校传文件那条口一次没现打过），" +
-                    "所以这张单是以「没有照片」交上去的。",
+                footnote = "照片最多 $REPAIR_MAX_PHOTOS 张、单张原图 5MB 以内（学校那一版也是这两道闸）。" +
+                    "选图、删图这一步本机什么都不发 —— 图是在你按「提交」之后才传上去的，" +
+                    "有一张没传上去这张单就不发，不会发出去一张没照片的单。",
             ),
         )
     }
@@ -132,6 +151,12 @@ class CaptureRepairForm(private val school: School) : FormSource {
         if (sjh.isBlank() || xm.isBlank()) {
             return Result.failure(Exception("学校没回报修人的姓名和手机号（getSjhForSjd 那发是空的），这张单发过去会缺联系人"))
         }
+        // 照片：一张张传，全传上了才发这张单（顺序放在所有本机检查之后 —— 别为一张填不全的单往学校传图）
+        val uris = values[KEY_PHOTOS].orEmpty().split(',').map { it.trim() }.filter { it.isNotBlank() }
+        if (uris.size > REPAIR_MAX_PHOTOS) {
+            return Result.failure(Exception("选了 ${uris.size} 张，学校那一版最多 $REPAIR_MAX_PHOTOS 张"))
+        }
+        val tpId = uploadPhotos(uris).getOrElse { return Result.failure(it) }
         val fields = mutableListOf(
             "xqdm" to xqdm,
             "lyId" to lyId,
@@ -141,7 +166,7 @@ class CaptureRepairForm(private val school: School) : FormSource {
             "gzms" to desc,
             "xm" to xm,
             "userCode" to school.userCode(),
-            "tpId" to "",                      // 没有照片就是这个空串，不是没填这个键
+            "tpId" to tpId,                    // 没选图就是空串，不是没填这个键
             "bxlx" to bxlx,
         )
         values[KEY_START]?.takeIf { it.isNotBlank() }?.let { fields += "kssj" to it }
@@ -154,6 +179,27 @@ class CaptureRepairForm(private val school: School) : FormSource {
             else "学校回了 flag:true，可没给单号。这一族的提交响应没有实样，" +
                 "回「我的报修」列表数一数有没有多出这一张才算数",
         )
+    }
+
+    /**
+     * 一张张传，换回那一串进 `tpId` 的 id（官方那份是 `imgList.map(n => n.id).join(",")`）。
+     *
+     * 中途任何一张失败就整批算失败、这张单不发。官方 H5 不是这么办的 —— 它传成一张进列表一张，
+     * 失败只弹一句、imgList 里少一张，单子照样发得出去。那种"看着交了其实没图"的结果我们不复制。
+     * 代价说清楚：已经传上去的那几张会变成学校那边的孤儿文件，这一版不清理（也没有删文件的口）。
+     */
+    private suspend fun uploadPhotos(uris: List<String>): Result<String> {
+        val ids = ArrayList<String>(uris.size)
+        uris.forEachIndexed { i, uri ->
+            val dataUrl = encodePhoto(uri)
+                .getOrElse { return Result.failure(Exception("第 ${i + 1} 张图本机就没弄好：${it.message}")) }
+            val id = school.repairUpload(dataUrl)
+                .getOrElse { e ->
+                    return Result.failure(Exception("第 ${i + 1} 张图学校没收：${e.message}（这张单没发出去）"))
+                }
+            ids += id
+        }
+        return Result.success(ids.joinToString(","))
     }
 
     private data class Node(val name: String, val parent: String, val value: String)
@@ -206,5 +252,7 @@ class CaptureRepairForm(private val school: School) : FormSource {
         const val KEY_START = "kssj"
         const val KEY_END = "jssj"
         const val KEY_DESC = "gzms"
+        /** 这一格存的是本机选中的 content uri（逗号分隔），不是校方的键 —— 提交时才换成 `tpId`。 */
+        const val KEY_PHOTOS = "photos"
     }
 }

@@ -313,19 +313,25 @@ fun HomeScreen(deps: HomeDeps, open: (String) -> Unit = {}, modifier: Modifier =
                 Hairline()
                 Spacer(Modifier.height(Gap.md))
                 Row(Modifier.fillMaxWidth()) {
+                    // 两格各占一半。以前后面还挂了一个 `Spacer(weight(1f))`，
+                    // 为的是跟上面那行三格对齐 —— 代价是这两格各只有三分之一宽，
+                    // "51.34 公里" 放不下，数字被掐成 "51 …"。那个省略号不是"没数"，
+                    // 学校给的数一直在，是这里把它截掉了。对齐没有数重要。
                     MetricCell(
                         "学期跑量",
                         d?.runSemesterKm?.let { fixed(it, 2) } ?: "—",
                         "公里",
+                        // 三位数跑量（"123.45"）再降一档字号，别再走截断那条路
+                        size = if ((d?.runSemesterKm ?: 0.0) >= 100.0) Type.title else Type.num,
                         modifier = Modifier.weight(1f),
                     )
                     MetricCell(
                         "其中晨跑",
                         d?.runMorningKm?.let { fixed(it, 2) } ?: "—",
                         "公里",
+                        size = if ((d?.runMorningKm ?: 0.0) >= 100.0) Type.title else Type.num,
                         modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.weight(1f))
                 }
             }
 
@@ -363,7 +369,7 @@ fun HomeScreen(deps: HomeDeps, open: (String) -> Unit = {}, modifier: Modifier =
             ) {
                 listOf("运动" to "sport", "查寝" to "dorm",
                     "校园卡" to "card", "报修" to "repair",
-                    "AI 课堂" to "aiclass", "待办" to "affair")
+                    "AI 课堂" to "aiclass", "待办" to "affair", "第二课堂" to "dekt")
                     .forEach { (name, at) -> Chip(name, picked = false) { open(at) } }
             }
 

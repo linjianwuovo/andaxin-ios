@@ -1,7 +1,10 @@
 package com.andaxin.state
 
 import com.andaxin.core.concurrency.todayDayOfWeek
+import com.andaxin.core.json.JSONObject
+import com.andaxin.core.store.Store
 import com.andaxin.core.ui.SharedViewModel
+import kotlinx.coroutines.flow.first
 import com.andaxin.data.Dashboard
 import com.andaxin.data.DashboardFeed
 import com.andaxin.data.MessageFeed
@@ -14,6 +17,7 @@ import com.andaxin.data.TimetableSlot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /*
@@ -94,11 +98,21 @@ data class TimetableUiState(
     val weeks: List<Int> = emptyList(),
     /** 现在第几周。0 = 还没拿到。 */
     val now: Int = 0,
+    /**
+     * 课名 → 色号（第几颗颜色，界面那边再对表取色）。
+     *
+     * 这张表本机存着，**换周不许改色** —— 他 10-24 晚指出：同一门课第八周是绿的、
+     * 第九周变紫。根因是色号以前按"这一周里恰好有哪几门课"排序发，课一多一少就全体错位。
+     */
+    val courseColors: Map<String, Int> = emptyMap(),
 )
 
-class TimetableModel(private val feed: TimetableFeed) : SharedViewModel() {
+class TimetableModel(private val feed: TimetableFeed, private val store: Store) : SharedViewModel() {
     private val _state = MutableStateFlow(TimetableUiState())
     val state: StateFlow<TimetableUiState> = _state.asStateFlow()
+
+    /** 内存里那份色号表，进屏时从本机读回来，之后只增不改。 */
+    private var palette: Map<String, Int> = emptyMap()
 
     init {
         scope.launch {
@@ -107,7 +121,12 @@ class TimetableModel(private val feed: TimetableFeed) : SharedViewModel() {
                 _state.value = _state.value.copy(weeks = w.weeks, now = w.now)
             }
         }
-        load(0)
+        // 色号表要先读回来，第一周的课一进来才能拿到"这门课第一次那个号"
+        scope.launch {
+            palette = parsePalette(runCatching { store.text(KEY_PALETTE).first() }.getOrNull())
+            _state.value = _state.value.copy(courseColors = palette)
+            load(0)
+        }
     }
 
     fun load(offset: Int) {
@@ -117,16 +136,55 @@ class TimetableModel(private val feed: TimetableFeed) : SharedViewModel() {
     /** 挂起版给下拉刷新用：等这一发回来才收指示器。 */
     suspend fun refresh(offset: Int = _state.value.weekOffset) {
         val r = try { feed.week(offset) } catch (e: Exception) { Result.failure(e) }
+        val slots = r.getOrDefault(_state.value.slots)
         // 用 copy：整份 new 会把刚拿到的周次表冲掉，那一行会闪回「本周/下周」两颗
         _state.value = _state.value.copy(
             firstLoad = false,
             weekOffset = offset,
-            slots = r.getOrDefault(_state.value.slots),
+            slots = slots,
+            courseColors = withNewCourses(slots.map { it.course }),
             error = r.exceptionOrNull()?.message,
         )
     }
+
+    /**
+     * 给这一周里没见过的新课名各编一个号，落本机。
+     *
+     * 取的是"最小没用过的号"，所以十二颗以内一门一色；老课永远拿它第一次那个号 ——
+     * 换周、翻学期、某一周围绕的课少了两门，都不会把已有课的颜色挪走。
+     */
+    private suspend fun withNewCourses(names: List<String>): Map<String, Int> {
+        val fresh = names.filter { it.isNotBlank() }.distinct().sorted().filterNot { palette.containsKey(it) }
+        if (fresh.isEmpty()) return palette
+        val next = palette.toMutableMap()
+        val taken = palette.values.toMutableSet()
+        fresh.forEach { n ->
+            var i = 0
+            while (taken.contains(i)) i++
+            taken += i
+            next[n] = i
+        }
+        palette = next
+        store.setText(KEY_PALETTE, writePalette(next))
+        return next
+    }
+
+    private companion object {
+        const val KEY_PALETTE = "timetable.courseColors"
+    }
 }
 
+/** 色号表本机就存一个 JSON 对象：`{"体育":0,"高等数学":1}`。坏了当没有，不拦着上课。 */
+private fun parsePalette(s: String?): Map<String, Int> {
+    if (s.isNullOrBlank()) return emptyMap()
+    return runCatching {
+        val o = JSONObject(s)
+        o.keys().asSequence().map { it to o.optInt(it) }.toMap()
+    }.getOrDefault(emptyMap())
+}
+
+private fun writePalette(m: Map<String, Int>): String =
+    JSONObject().apply { m.forEach { (k, v) -> put(k, v) } }.toString()
 data class MessageUiState(
     val firstLoad: Boolean = true,
     val items: List<MessageItem> = emptyList(),

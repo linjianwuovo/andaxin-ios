@@ -18,6 +18,6 @@ import com.andaxin.state.TimetableModel
 @Composable
 fun TimetableScreen(modifier: Modifier = Modifier) {
     val graph = LocalAppGraph.current
-    val model: TimetableModel = adxViewModel { TimetableModel(it.timetable) }
+    val model: TimetableModel = adxViewModel { TimetableModel(it.timetable, it.store) }
     TimetableScreen(TimetableDeps(model = model), modifier = modifier)
 }

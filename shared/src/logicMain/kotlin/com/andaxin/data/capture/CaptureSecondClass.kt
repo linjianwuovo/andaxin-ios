@@ -1,0 +1,141 @@
+package com.andaxin.data.capture
+
+import com.andaxin.core.json.JSONArray
+import com.andaxin.core.json.JSONObject
+import com.andaxin.core.net.HttpCall
+import com.andaxin.core.net.HttpEngine
+import com.andaxin.core.net.HttpEngineConfig
+import com.andaxin.core.net.appendQueryParams
+import com.andaxin.core.net.createHttpEngine
+import com.andaxin.core.text.fixed
+
+/*
+ * 第二课堂（`dekt.aiit.edu.cn`）。契约与全部 36 条端点见 `docs/契约_第二课堂.md`，
+ * 这一份只接**有真报文的那两条读口**（10-25 16:41 那一轮抓的，字段名是从实样里抄的，不是猜的）：
+ *
+ * - `GET /app/credit/overview` → `{flag:true, msg:"查询成功", data:{totalCredit:"0.05",
+ *   modules:[{moduleCode, moduleName, recordCount, totalCredit, records:[…]}]}}`
+ * - `GET /app/credit/applications?status=` → `data.records:[{publishName, moduleName,
+ *   categoryName, credit, status, applyReason, …}]`
+ *
+ * 三条要点：
+ * ① 身份走**请求头** `accessToken` + `userCode`（驼峰），不是表单体 —— 跟报修那一族同写法，
+ *    跟门户 fdygl 也同类，但**这一族没有 `_userCode`/`xh` 那一套**。
+ * ② 判成没成看 `flag`（实样里就是 `flag:true` + `msg:"查询成功"`），**不是 `code`**。
+ *    契约笔记里那条"信封 {code,msg,data}"是 grep 到别的响应得出的，真报文打脸了：以这里为准。
+ * ③ `credit`/`totalCredit` 服务端给的是**字符串**（"0.05"），不是数 —— 别 toDouble 之后自己四舍五入。
+ *
+ * 没接的：`/app/project/list`（可选活动那一屏）参数抄全了但响应形状没实样，
+ * `/app/act/page`、`/app/actReg/myList` 有真报文但参数名没抄到 —— 三条都等有形状再接，
+ * 不拿猜的字段名往界面上摆。写口（申报、问卷提交、附件上传）一条都不接。
+ *
+ * 平移注（10-25 合安卓侧第二课堂那批时进共享层）：报文口径一字未动，
+ * 换的只有平台那一侧——裸 OkHttp 换成 HTTP 缝引擎、`URLEncoder` 换 `appendQueryParams`、
+ * `org.json` 换共享垫片、`%.1f` 换 `fixed(t, 1)`（与 java 同口径：最短十进制上 half-up）。
+ */
+private const val DEKT = "https://dekt.aiit.edu.cn"
+
+/** 一个模块的学分：模块名 + 该模块学分 + 认定条数。 */
+data class ScModule(val name: String, val credit: String, val required: String, val count: String)
+
+/** 我的一条申报：活动名 / 模块 / 类别 / 学分 / 状态。 */
+data class ScApply(
+    val title: String,
+    val module: String,
+    val category: String,
+    val credit: String,
+    val status: String,
+)
+
+data class SecondClass(
+    val total: String,
+    val modules: List<ScModule>,
+    val applies: List<ScApply>,
+    /** 要求总学分（必修五块 + 选修那一块的要求，官方顶上那个「0.1 / 4.0」的分母）。 */
+    val required: String = "",
+    /** 哪一发没成，界面上原样报出来。空 = 两发都成。 */
+    val why: String?,
+) {
+    val isEmpty: Boolean get() = modules.isEmpty() && applies.isEmpty()
+}
+
+class CaptureSecondClass(private val school: School) {
+
+    private val http: HttpEngine =
+        createHttpEngine(HttpEngineConfig(connectTimeoutMs = 15_000, readTimeoutMs = 20_000))
+
+    suspend fun load(): SecondClass {
+        val ov = get("/app/credit/overview")
+        val ap = get("/app/credit/applications", "status" to "")
+        // 顶上那个总学分官方读的是 student-credit（每块给 credit + requiredCredit），
+        // 不是 overview 的 totalCredit —— 装机对出来两个数不一样（这边 0.05，官方 0.1/4.0）。
+        val sc = get("/app/credit/student-credit").getOrNull()?.optJSONObject("data")
+        val why = listOfNotNull(
+            ov.exceptionOrNull()?.let { "总览没拉到：${it.message}" },
+            ap.exceptionOrNull()?.let { "我的申报没拉到：${it.message}" },
+        ).joinToString("；").takeIf { it.isNotBlank() }
+        val o = ov.getOrNull()
+        val data = o?.optJSONObject("data")
+        val mods = data.optArray("modules")
+        val scMods = sc.optArray("modules")
+        val recs = ap.getOrNull()?.optJSONObject("data").optArray("records")
+        return SecondClass(
+            total = sc?.optString("totalCredit").orEmpty()
+                .ifBlank { sumOf(scMods, "credit") },
+            required = sumOf(scMods, "requiredCredit"),
+            modules = (0 until mods.length()).mapNotNull { i ->
+                mods.optJSONObject(i)?.let {
+                    ScModule(
+                        name = it.optString("moduleName"),
+                        credit = scMods.optJSONObject(i)?.optString("credit").orEmpty()
+                            .ifBlank { it.optString("totalCredit") },
+                        required = scMods.optJSONObject(i)?.optString("requiredCredit").orEmpty(),
+                        count = it.optInt("recordCount").toString(),
+                    )
+                }
+            },
+            applies = (0 until recs.length()).mapNotNull { k ->
+                recs.optJSONObject(k)?.let {
+                    ScApply(
+                        title = it.optString("publishName"),
+                        module = it.optString("moduleName"),
+                        category = it.optString("categoryName"),
+                        credit = it.optString("credit"),
+                        status = it.optString("status"),
+                    )
+                }
+            },
+            why = why,
+        )
+    }
+
+    private suspend fun get(path: String, vararg q: Pair<String, String>): Result<JSONObject> =
+        runCatching {
+            val url = if (q.isEmpty()) DEKT + path else appendQueryParams(DEKT + path, q.toList())
+            val reply = http.execute(
+                HttpCall(
+                    method = "GET",
+                    url = url,
+                    headers = listOf(
+                        // 这一族只认这两个头，驼峰写法（见文件头 ①）
+                        "accessToken" to school.token(),
+                        "userCode" to school.userCode(),
+                        "Accept" to "application/json",
+                    ),
+                ),
+            )
+            val body = reply.bodyText
+            if (body.isBlank()) error("学校回了个空 body（HTTP ${reply.status}）")
+            JSONObject(body)
+        }
+
+    /** 那一族给的都是字符串数（"0.1"），按字符串加一遍，保留一位小数。 */
+    private fun sumOf(arr: JSONArray, key: String): String {
+        var t = 0.0
+        for (i in 0 until arr.length()) t += arr.optJSONObject(i)?.optString(key)?.toDoubleOrNull() ?: 0.0
+        return if (t == 0.0) "" else fixed(t, 1)
+    }
+
+    /** `data` 里那个数组有时给成 null、有时整个键没有 —— 一律回一个空数组，调用方不判空。 */
+    private fun JSONObject?.optArray(key: String): JSONArray = this?.optJSONArray(key) ?: JSONArray()
+}

@@ -76,7 +76,7 @@ class IosAppGraph(documentsPath: String) {
     val messageModel = MessageModel(messageFeed)
     val homeModel = HomeModel(dashboardFeed, timetableFeed)
     val noticeModel = NoticeModel(noticeFeed)
-    val timetableModel = TimetableModel(timetableFeed)
+    val timetableModel = TimetableModel(timetableFeed, store)
 
     /**
      * 给 Swift 的协程启动口：block 在主线程协程里跑。suspend 的细节（async/throws 过桥）

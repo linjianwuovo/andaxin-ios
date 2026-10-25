@@ -54,7 +54,7 @@
         android:allowBackup="false"
         android:networkSecurityConfig="@xml/network_security_config"
 
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher_blue"
         android:label="@string/app_name"
         android:supportsRtl="false"
         android:theme="@style/Theme.AndaXin">
@@ -63,12 +63,67 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+
+        <!--
+          桌面那枚可以换：入口从 MainActivity 挪到 alias 上，每一枚图标一条 alias，
+          只有选中的那条 enabled —— 换图标是"开一条、关一条"，MainActivity 一直开着，
+          所以不会把正在跑的 App 关掉。为什么入口不能留在 MainActivity 上，见
+          core/launcher/LauncherIcons.kt 文件头第 ① 条。
+          图形在 res/drawable/ic_launcher_fg_*.xml 与 ic_launcher_bg_*.xml。
+          五枚都在那一排里可选，出厂立着的是「蓝底青杠」那条。
+          （10-25 删掉了「临时标记」那枚方框和琥珀那一枚 —— 方框是骨架期的占位，
+            它连带 `<application android:icon>` 一起换成了蓝底那套。）
+        -->
+        <activity-alias
+            android:name=".LauncherBlue"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blue">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias android:name=".LauncherPaper" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_launcher_paper" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias android:name=".LauncherInk" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_launcher_ink" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias android:name=".LauncherTeal" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_launcher_teal" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias android:name=".LauncherIndigo" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_launcher_indigo" android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".core.run.RunService"
@@ -86,12 +141,17 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- 上课提醒那颗闹钟。exported=false：只接自己包内投的广播 -->
+        <!--
+          上课提醒那两颗闹钟：CLASS_REMIND 是"提前量到点"那一颗，CLASS_TICK 是课前窗口里
+          每分钟自己接下一颗的那条滴答（见 core/schedule/ClassReminder.kt 顶上第 ④ 条）。
+          exported=false：只接自己包内投的广播
+        -->
         <receiver
             android:name="com.andaxin.core.schedule.ReminderReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.andaxin.action.CLASS_REMIND" />
+                <action android:name="com.andaxin.action.CLASS_TICK" />
             </intent-filter>
         </receiver>
 
@@ -100,6 +160,20 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          覆盖安装完那一条广播：只用来把桌面入口补回来。
+          0.8.40 删过两条 activity-alias，而组件开关跨覆盖安装保留 —— 之前在这排里选过那两枚的人，
+          升级完可能一条入口都不剩，那时候 App 连打开的机会都没有，只能靠这一发。
+          系统送的受保护广播，非导出也收得到。
+        -->
+        <receiver
+            android:name="com.andaxin.core.launcher.ReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

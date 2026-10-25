@@ -206,7 +206,11 @@ fun TimetableScreen(deps: TimetableDeps, modifier: Modifier = Modifier) {
             if (showDayMode) {
                 DayList(lessons.filter { it.day == today }.ifEmpty { lessons }, today, todayRuns)
             } else {
-                Grid(lessons, today, periodNow, rowHeightFor(viewport, if (runs.isEmpty()) 0.dp else 52.dp), state.weekOffset)
+                Grid(
+                    lessons, today, periodNow,
+                    rowHeightFor(viewport, if (runs.isEmpty()) 0.dp else 52.dp),
+                    state.weekOffset, state.courseColors,
+                )
             }
 
             if (lessons.isEmpty() && !state.firstLoad && state.error == null) {
@@ -272,12 +276,22 @@ private fun RunNote(runs: List<TimetableSlot>) {
  * 而不是 09:55，整张表看着就是"区块没对准"。
  */
 @Composable
-private fun Grid(slots: List<TimetableSlot>, today: Int, periodNow: Int?, rowH: Dp, weekOffset: Int) {
+private fun Grid(
+    slots: List<TimetableSlot>,
+    today: Int,
+    periodNow: Int?,
+    rowH: Dp,
+    weekOffset: Int,
+    courseColors: Map<String, Int>,
+) {
     val ink = LocalInk.current
     val accent = MaterialTheme.colorScheme.primary
     // 表头第二行那个日期：这一周的周一 + (day-1)。官方那一版就是"周一 / 10-19"两行。
     val monday = remember(weekOffset) { LessonPeriods.weekMonday(offset = weekOffset) }
-    val colors = remember(slots) { coursePalette(slots) }
+    // 色号是 model 那边从本机读回来的那张表（一门课一个号，换周不改），这里只对色板取色
+    val colors = remember(courseColors) {
+        courseColors.mapValues { (_, i) -> COURSE_COLORS[i.mod(COURSE_COLORS.size)] }
+    }
 
     val byDay = remember(slots) {
         slots.groupBy { it.day }.mapValues { (_, v) -> v.sortedBy { it.startPeriod } }
@@ -412,20 +426,24 @@ private fun CourseCell(slot: TimetableSlot, span: Int, now: Boolean, rowH: Dp, s
             fontSize = Type.tiny,
             fontWeight = FontWeight.Medium,
             color = Color.White,
-            maxLines = if (span >= 2) 3 else 2,
+            // 三节往上的块高出一大截，课名多给一行（"大学生心理健康教育" 不再被掐断）
+            maxLines = if (span >= 3) 4 else if (span >= 2) 3 else 2,
             lineHeight = Type.tinyLine,
             overflow = TextOverflow.Ellipsis,
         )
-        if (span >= 2) {
-            Spacer(Modifier.height(1.dp))
-            Text(
-                text = shortRoom(slot.room),
-                fontSize = Type.tinier,
-                color = Color.White.copy(alpha = 0.86f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Spacer(Modifier.height(1.dp))
+        Text(
+            text = shortRoom(slot.room),
+            fontSize = Type.tinier,
+            color = Color.White.copy(alpha = 0.86f),
+            // 教室只给一行，而一列才五十几 dp ——「博雅A1区 102」这种就被掐成「博雅A1 …」，
+            // 块的下半截却空着一大片。让它按块高换行：两节两行、三节往上三行。
+            // 单节那一格反过来卡在一行：块高就那么多，再把字号档调大一点就要溢到块外面去了。
+            // （行宽不够是列宽定的，六列除屏幕宽，改不了；能改的是别浪费块里已有的高度。）
+            maxLines = if (span >= 3) 3 else if (span >= 2) 2 else 1,
+            lineHeight = Type.tinierLine,
+            overflow = TextOverflow.Ellipsis,
+        )
         // 不再写"第 1-2 节"：块占几行本身已经说了这件事，而格子很窄，
         // 多这一行就是把课名挤成"高等数…"的那只手（10-20 装机他嫌难看的就是这个）。
     }
@@ -456,17 +474,14 @@ private val COURSE_COLORS = listOf(
     Color(0xFF475569), // 石板
 )
 
-/**
- * 这一周里"课名 → 色"的对照表。**按课名排序后依次发色**，不用哈希。
+/*
+ * 「课名 → 第几颗色」这张表不在这一屏算 —— 它在 `state.TimetableModel` 里，本机存着。
  *
- * 之前用 `hashCode % n`：七门课里三门撞到同一个灰蓝，整张表看着像阴天 ——
- * 哈希对中文课名本来就容易扎堆。按排序发色能保证"这一周有几门课就尽量用几种颜色"，
- * 而且同一周里稳定；换周以后课表变了，颜色会跟着重排，这一点认了。
+ * 以前这一屏自己算：把**这一周**的课名排个序，一颗一颗往下发。于是同一门课换一周就可能
+ * 换个号（那一周多了两门课、排序一变，它就从第 0 颗挪到第 2 颗），他 10-24 晚撞见的就是这个：
+ * 第八周绿的课，第九周变紫。现在改成"一门课第一次见到时占一个最小没用过的号，往后哪一周都认它"。
+ * 十二颗以内一门一色；真超过十二门，多的按 `mod` 回头重用 —— 那是色板到头，不是算错。
  */
-private fun coursePalette(slots: List<TimetableSlot>): Map<String, Color> =
-    slots.map { it.course }.distinct().sorted()
-        .mapIndexed { i, name -> name to COURSE_COLORS[i % COURSE_COLORS.size] }
-        .toMap()
 
 /** 「只看今天」那一档：一张卡里一行一节、中间分隔线，不再一门课一张卡。 */
 @Composable

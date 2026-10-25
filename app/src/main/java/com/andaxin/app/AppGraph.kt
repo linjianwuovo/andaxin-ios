@@ -16,6 +16,7 @@ import com.andaxin.data.NoticeFeed
 import com.andaxin.data.SportsFeed
 import com.andaxin.data.TimetableFeed
 import com.andaxin.data.capture.BriefSwitch
+import com.andaxin.data.capture.RepairPhotos
 import com.andaxin.data.capture.CaptureAffairDetail
 import com.andaxin.data.capture.CaptureAffairs
 import com.andaxin.data.capture.CaptureCreditDetail
@@ -44,6 +45,7 @@ import com.andaxin.data.capture.CampusCardClient
 import com.andaxin.data.capture.CaptureRepairDetail
 import com.andaxin.data.capture.CaptureToRead
 import com.andaxin.data.capture.CaptureRepairForm
+import com.andaxin.data.capture.CaptureSecondClass
 import com.andaxin.data.capture.CaptureRepairList
 import com.andaxin.data.capture.FormSwitch
 import com.andaxin.data.capture.DetailSwitch
@@ -256,7 +258,13 @@ class AppGraph(val context: Context) {
     }
 
     /** 新建报修那张表：下拉的可选值全部来自校方三条字典（见 `CaptureRepairForm` 顶上那段取证）。 */
-    val repairForm: FormSource by lazy { FormSwitch(CaptureRepairForm(school), Repair.form, session) }
+    val repairForm: FormSource by lazy {
+        // 传图那一步的编码留在 app（BitmapFactory/EXIF 是安卓物），共享层只拿这条缝
+        FormSwitch(CaptureRepairForm(school) { uri -> RepairPhotos.encode(context, uri) }, Repair.form, session)
+    }
+
+    /** 第二课堂（dekt）：只读两发，字段名从 10-25 的真报文里抄的，见 `CaptureSecondClass` 顶上那段。 */
+    val secondClass: CaptureSecondClass by lazy { CaptureSecondClass(school) }
 
     /**
      * 校园卡（第三方新开普）。10-20 现打把三跳会话交换接通了，取证见 `CampusCardClient` 顶上那段。
