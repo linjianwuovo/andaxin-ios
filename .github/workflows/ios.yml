@@ -13,6 +13,9 @@ jobs:
   build:
     name: framework + 模拟器 + 无签名 ipa
     runs-on: macos-15
+    # 发 Release 要写权限：GITHUB_TOKEN 默认只读，不给就是 403
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -145,3 +148,43 @@ jobs:
             AndaXin-unsigned.ipa
             shared-framework.zip
           if-no-files-found: warn
+
+      - name: 发一版 Release（每次提交都挂上这一发的无签名 ipa）
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 只用 curl + shell 内建，不引第三方 action：
+          # 上一轮连着三发都栽在"探针没在目标环境验过"，这里能少一个依赖就少一个。
+          API=https://api.github.com/repos/$GITHUB_REPOSITORY
+          SHORT=$(git rev-parse --short HEAD)
+          TAG="ios-$SHORT"
+          IPA="AndaXin-$SHORT-unsigned.ipa"
+          cp AndaXin-unsigned.ipa "$IPA"
+          echo "这一发的包：$IPA（$(wc -c < "$IPA") 字节）"
+          BODY="未签名 ipa：在 Windows 上用 Sideloadly 或爱思拿免费 Apple ID 重签再装。提交 $SHORT；模拟器截屏在 Actions 的 ios-artifacts 产物包里。"
+          code=$(curl -sS -o rel.json -w '%{http_code}' -X POST "$API/releases" \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"iOS 骨架 $SHORT\",\"target_commitish\":\"$GITHUB_REF_NAME\",\"prerelease\":true,\"body\":\"$BODY\"}")
+          echo "建 Release: HTTP $code"
+          if [ "$code" = "422" ]; then
+            # 同一发重跑过（tag 已在）：改拿那份的上传地址，别把整条流水线判死
+            code=$(curl -sS -o rel.json -w '%{http_code}' "$API/releases/tags/$TAG" \
+              -H "Authorization: Bearer $GH_TOKEN")
+            echo "改取已有 Release: HTTP $code"
+          fi
+          UP=$(tr -d ' \n' < rel.json | grep -o '"upload_url":"[^"]*"' | head -1 | sed 's/.*"upload_url":"//;s/{.*//')
+          if [ -z "$UP" ]; then
+            echo "拿不到 upload_url，回话前 300 字节："
+            head -c 300 rel.json; echo
+            exit 1
+          fi
+          up=$(curl -sS -o up.json -w '%{http_code}' -X POST "$UP?name=$IPA" \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+            --data-binary "@$IPA")
+          echo "传 ipa: HTTP $up"
+          if [ "$up" != "201" ]; then
+            head -c 300 up.json; echo
+            exit 1
+          fi
+          echo "Release 页：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
