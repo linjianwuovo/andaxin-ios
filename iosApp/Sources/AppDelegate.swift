@@ -26,9 +26,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window?.rootViewController = splashHolder()
         window?.makeKeyAndVisible()
 
-        // Gate 的挂起细节全在 Kotlin 侧消化，Swift 只拿同步回调
+        // Gate 的挂起细节全在 Kotlin 侧消化，Swift 只拿同步回调。
+        // 回调里的布尔过桥是盒子化的 KotlinBoolean（不是 Swift Bool），所以判真假要取 .boolValue ——
+        // 直接 `if signed` 编不过：cannot convert value of type 'KotlinBoolean' to 'Bool'。
         g.resolveGate { [weak self] signed in
-            if signed {
+            if signed.boolValue {
                 self?.window?.rootViewController = self?.makeTabs(g)
             } else {
                 self?.window?.rootViewController = self?.makeLogin(g)
