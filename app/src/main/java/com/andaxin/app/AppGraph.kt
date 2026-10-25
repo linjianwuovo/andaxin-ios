@@ -249,7 +249,7 @@ class AppGraph(val context: Context) {
     }
 
     /** 新建报修那张表：下拉的可选值全部来自校方三条字典（见 `CaptureRepairForm` 顶上那段取证）。 */
-    val repairForm: FormSource by lazy { FormSwitch(CaptureRepairForm(school), Repair.form, session) }
+    val repairForm: FormSource by lazy { FormSwitch(CaptureRepairForm(school, context), Repair.form, session) }
 
     /**
      * 校园卡（第三方新开普）。10-20 现打把三跳会话交换接通了，取证见 `CampusCardClient` 顶上那段。

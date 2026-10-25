@@ -73,6 +73,31 @@ private suspend fun School.repair(method: String, vararg fields: Pair<String, St
 internal suspend fun School.repairJson(method: String, vararg fields: Pair<String, String>): Result<JSONObject> =
     repair(method, *fields)
 
+/**
+ * 传一张图，换回学校给的那个文件 id —— 提交时那一串 id 拼进 `tpId`。
+ *
+ * 【取证 · ① 官方前端原文，见 `docs/接入清单.md` 一点三之二十八】
+ * `ABILITY.request.post("/api/bxjlSjd/uploadForSjd.do?timestap=" + Date.now(), {fileImg: <dataURL>}, false)`，
+ * 成功响应读 `t.data.file.id` / `t.data.file.fileFullName`。三条要点：
+ * ① 不是 multipart，图整个当 base64 数据 URL 塞进 `fileImg` 一个字段，身份还是这一族那两键（`postH5` 给）；
+ * ② URL 上那个 `timestap` 是学校自己拼错的，照抄，别"顺手改成 timestamp"；
+ * ③ 提交时 `tpId = imgList.map(n => n.id).join(",")`，所以这里只留 `id`。
+ *
+ * **这一发我们自己一次没打过** —— 上面是"官方前端就是这么发的"，不是"我发过、学校答了"。
+ * 所以形状认两种（`data.file` 和这一族别的口那种 `data.data.file`），两种都没有就**报错**，
+ * 不能当"传成功了只是没给 id"：那样单子会带着空 `tpId` 发出去，照片静默丢掉。
+ */
+internal suspend fun School.repairUpload(dataUrl: String): Result<String> =
+    postH5("$REPAIR/uploadForSjd.do?timestap=${System.currentTimeMillis()}", "fileImg" to dataUrl)
+        .mapCatching { root ->
+            if (!root.optBoolean("flag", false)) throw Exception(denied(root))
+            val file = root.optJSONObject("data")?.optJSONObject("file")
+                ?: root.optJSONObject("data")?.optJSONObject("data")?.optJSONObject("file")
+                ?: throw Exception("学校回了成功，但响应里没有那层 `file`（形状和取证那份不一样，不敢当传上了）")
+            file.optString("id").takeIf { it.isNotBlank() }
+                ?: throw Exception("学校给了 `file`，可里面没有 `id`，`tpId` 拼不出来")
+        }
+
 class CaptureRepairList(private val school: School) : ListSource {
     override suspend fun rows(): Result<List<BriefRow>> {
         val root = school.repair("getWdbxListForSjd").getOrElse { return Result.failure(it) }

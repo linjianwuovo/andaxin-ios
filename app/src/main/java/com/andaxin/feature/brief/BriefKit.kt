@@ -1,5 +1,9 @@
 package com.andaxin.feature.brief
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +34,17 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import com.andaxin.data.capture.RepairPhotos
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -494,6 +509,40 @@ fun BriefFormPage(
     }
 }
 
+/** 照片那一格一 tile 的边长（选中的和那颗「＋」一样大，格子排起来才齐）。 */
+private val PhotoTile = 76.dp
+
+/**
+ * 一格里的那张缩略图。
+ *
+ * 解码走 IO 线程、按 2 的幂降采样 —— 十张原图整个进内存能把这一屏撑爆。
+ * 读不出来就明写"读不出"，不拿一块灰底顶着：那看着像还没加载，其实这张图已经没了。
+ */
+@Composable
+private fun PhotoThumb(uri: String, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val ink = LocalInk.current
+    val px = with(LocalDensity.current) { (PhotoTile * 2).roundToPx() }
+    val bmp by produceState<ImageBitmap?>(null, uri) {
+        value = withContext(Dispatchers.IO) { RepairPhotos.thumb(ctx, uri, px) }?.asImageBitmap()
+    }
+    bmp?.let {
+        Image(
+            bitmap = it,
+            contentDescription = "已选的照片",
+            modifier = modifier.clip(Radius.tag),
+            contentScale = ContentScale.Crop,
+        )
+    } ?: Box(
+        modifier = modifier
+            .clip(Radius.tag)
+            .background(ink.offFill),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("读不出", fontSize = Type.micro, color = ink.faint)
+    }
+}
+
 @Composable
 private fun FieldRow(
     field: Field,
@@ -525,6 +574,69 @@ private fun FieldRow(
             if (field.text.isNotBlank()) {
                 Text(field.text, fontSize = Type.body, color = ink.body, lineHeight = Type.bodyLine)
             }
+        }
+        // 照片那一格：格子里只放本机选中的图。选图、删图都不碰网络 ——
+        // 传图那几发排在「提交」后面（`CaptureRepairForm.uploadPhotos`），这一格只是把 uri 攒着。
+        is Field.Photos -> {
+            val picked = get(field.key).split(',').map { it.trim() }.filter { it.isNotBlank() }
+            val pick = rememberLauncherForActivityResult(
+                ActivityResultContracts.PickMultipleVisualMedia(field.max),
+            ) { got ->
+                put(
+                    field.key,
+                    (picked + got.map { it.toString() }).distinct().take(field.max).joinToString(","),
+                )
+            }
+            Text(field.label, fontSize = Type.meta, color = ink.muted)
+            Spacer(Modifier.height(Gap.xs))
+            Row(horizontalArrangement = Arrangement.spacedBy(Gap.sm)) {
+                picked.forEach { uri ->
+                    Box(Modifier.size(PhotoTile)) {
+                        PhotoThumb(uri = uri, modifier = Modifier.fillMaxSize())
+                        Text(
+                            "✕",
+                            fontSize = Type.meta,
+                            color = ink.strong,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .clip(Radius.tag)
+                                .background(ink.offFill)
+                                .pressClick { put(field.key, (picked - uri).joinToString(",")) }
+                                .padding(horizontal = 7.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+                if (picked.size < field.max) {
+                    Box(
+                        modifier = Modifier
+                            .size(PhotoTile)
+                            .clip(Radius.tag)
+                            .background(ink.offFill)
+                            .pressClick {
+                                pick.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    ),
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("＋", fontSize = Type.title, color = ink.muted)
+                    }
+                }
+            }
+            Spacer(Modifier.height(Gap.xs))
+            Text(
+                text = if (picked.size >= field.max) {
+                    "已经 ${picked.size} 张，到顶了（学校那一版最多也是 ${field.max} 张）。"
+                } else {
+                    "已选 ${picked.size} 张，最多 ${field.max} 张，单张原图 5MB 以内。" +
+                        "图是按下「提交」之后才往学校传的。"
+                },
+                fontSize = Type.micro,
+                color = ink.faint,
+                lineHeight = Type.metaLine,
+            )
         }
         // 宿舍这种"本机设置里填的东西"：填了什么就显示什么，没填就明说去哪儿填，
         // 不拿一个假房间号顶着 —— 那会让报修单看着像已经填好了
