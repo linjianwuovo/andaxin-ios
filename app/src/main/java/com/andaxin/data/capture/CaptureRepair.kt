@@ -65,6 +65,9 @@ import org.json.JSONObject
  */
 private const val REPAIR = "https://repair.aiit.edu.cn/bxjlSjd"
 
+/** 附图那种"校方给的根路径"要挂的是站点根，不是 `bxjlSjd` 这一层（见 [CaptureRepairDetail.fileUrls]）。 */
+private const val REPAIR_ROOT = "https://repair.aiit.edu.cn"
+
 /** 报修那一族只认 H5 驼峰身份，且 `userName` 不参与校验，所以直接复用 `postH5`。 */
 private suspend fun School.repair(method: String, vararg fields: Pair<String, String>): Result<JSONObject> =
     postH5("$REPAIR/$method.do", *fields)
@@ -191,8 +194,27 @@ class CaptureRepairDetail(private val school: School) : DetailSource {
                 fields = fields,
                 paragraphs = paragraphs,
                 actions = actionsOf(d),
+                images = fileUrls(d, "fileList") + fileUrls(d, "wxlcFileList"),
             ),
         )
+    }
+
+    /**
+     * 校方那一串附图 → 能直接打开的地址。
+     *
+     * 【取证 · ① 读的前端代码】H5 那边 `imgList.push({id: t.data.file.id, src: t.data.file.fileFullName})`
+     * —— 当 `<img src>` 用的就是 `fileFullName` 这一个键（`bxjs/6.*.js` @18473）。
+     * 它那个页面挂在 repair 站上，所以相对路径是按那一台解析的 —— 这里给相对路径补的前缀就是它，
+     * **这一条是推出来的，没有实样**：本账号三张单 `fileList` 全 `[]`、`wxlcFileList` 全 `null`，
+     * 里面到底给的是绝对地址还是根路径，得等一张真带图的单。打不开时界面明写"这张没取到"，不空一块。
+     */
+    private fun fileUrls(d: JSONObject, key: String): List<String> {
+        val arr = d.optJSONArray(key) ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.optString("fileFullName")?.takeIf { it.isNotBlank() }?.let { f ->
+                if (f.startsWith("http")) f else "$REPAIR_ROOT/" + f.trimStart('/')
+            }
+        }
     }
 
     /**

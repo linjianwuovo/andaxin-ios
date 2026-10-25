@@ -39,6 +39,13 @@ data class BriefDetail(
      * 加上条目自己带的标记（`isWithdraw`、待销假那一环）。
      */
     val actions: List<Action> = emptyList(),
+    /**
+     * 这一条上校方存着的附图，已经是能直接打开的地址。
+     *
+     * 现在只有报修在用（`fileList` 报修人传的 + `wxlcFileList` 维修过程中传的）。
+     * 空列表就是真没有图，界面上那一块整个不摆。
+     */
+    val images: List<String> = emptyList(),
 )
 
 /**
