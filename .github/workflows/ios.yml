@@ -46,19 +46,22 @@ jobs:
       - name: 模拟器装上、点亮、截屏
         run: |
           # 选机：同型号里运行时最新的那台 iPhone 16。
-          # 之前是 grep "iPhone 16 (" | head -1，抓到的是列表里第一个同名设备——那是个老运行时，
-          # 而 xcodebuild 走的是 OS:26.2 那台（destination 警告里 id:2911FD29…）。
-          # 拿 26.2 SDK 编出来的 app 装进老运行时：install 和 launch 都给好脸色，进程几秒就没了 —— 对得上前两发的现象。
-          JSON=$(xcrun simctl list devices available -j)
-          UDID=$(printf '%s' "$JSON" | jq -r 'to_entries | map(select(.key|startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))) | sort_by(.key) | last | .value | map(select(.name=="iPhone 16" and .isAvailable)) | .[0].udid // empty')
-          RUNTIME=$(printf '%s' "$JSON" | jq -r 'to_entries | map(select(.key|startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))) | sort_by(.key) | last | .key' | sed 's/.*iOS-//')
-          echo "选中：iPhone 16 / iOS $RUNTIME / $UDID"
+          # 8bcec04 那发栽在 jq 上（漏了 .devices，jq 退 5，这一步在启动 app 之前就死了）；
+          # 这次不依赖 jq 也不依赖 python —— simctl list 的文本输出按运行时从旧到新分段
+          # （-- iOS 18.5 -- / -- iOS 26.2 --），所以"最后一个 iPhone 16 ("就是最新那台。
+          # 老写法 grep | head -1 取到的正是最旧那台，而 xcodebuild 走的是 OS:26.2。
+          DEVLIST=$(xcrun simctl list devices available)
+          printf '%s\n' "$DEVLIST" | grep -E '^-- |iPhone 16 \(' | tail -12 || true
+          UDID=$(printf '%s\n' "$DEVLIST" | grep "iPhone 16 (" | tail -1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          RUNTIME=$(printf '%s\n' "$DEVLIST" | awk '/^-- /{r=$0} /iPhone 16 \(/{last=r} END{print last}')
+          echo "选中：${RUNTIME:-运行时未知} / ${UDID:-没选到}"
           if [ -z "$UDID" ]; then echo "没有可用的 iPhone 16 模拟器，判这步失败"; exit 1; fi
           xcrun simctl boot "$UDID" || true
           APP=$(find build/Build/Products -name 'AndaXin.app' -path '*iphonesimulator*' | head -1)
-          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl install "$UDID" "$APP" || { echo "install 就失败了"; exit 1; }
+          xcrun simctl get_app_container "$UDID" com.andaxin.ios data >/dev/null 2>&1 && echo "app 容器在" || echo "app 容器不在（装没装上都有问题）"
           # macOS runner 没有 GNU timeout（78750fc 那发就是 command not found，launch 根本没跑）。
-          # 改成后台挂 console + sleep + kill：kill 的是 simctl 客户端，不动 app，
+          # 后台挂 console + sleep + kill：kill 的是 simctl 客户端，不动 app，
           # 所以第二张图还能顺便验"是不是我这一掐把 app 带走的"。
           xcrun simctl launch --console-pty --terminate-running-process "$UDID" com.andaxin.ios > launch-console.log 2>&1 &
           CPID=$!
@@ -67,19 +70,21 @@ jobs:
           kill "$CPID" 2>/dev/null || true
           sleep 6
           xcrun simctl io "$UDID" screenshot iosApp/simulator-later.png || true
+          echo "--- launch-console.log（app 自己吐的，最多 80 行）"
+          echo "console 字节: $(wc -c < launch-console.log 2>/dev/null || echo 读不到)"
+          head -80 launch-console.log 2>/dev/null || echo "console 是空的"
           # 崩溃报告两处都翻：runner 用户目录，和这台模拟器自己的数据目录
           for d in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/CrashReporter"; do
             find "$d" -iname '*AndaXin*' -mmin -20 2>/dev/null | while read -r c; do
               echo "--- 崩溃报告 $c"; head -80 "$c"
             done
           done
-          echo "--- 系统日志里 AndaXin 那三十行"
+          echo "--- 系统日志里的 AndaXin"
           xcrun simctl spawn "$UDID" log show --style compact --last 3m --predicate 'process == "AndaXin"' 2>/dev/null | tail -30 || true
           xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i andaxin || echo "launchctl 里已经没有 AndaXin 进程"
-          # 装进去的那份 plist 到底长什么样：xcodebuild 警告说缺启动屏，而仓库这份是有的
-          BUILT="$APP/Info.plist"
+          # 装进去的那份 plist 到底长什么样：xcodebuild 警告说缺启动屏，而仓库那份现在已改成由 project.yml 生成
           echo "--- 产物里的 Info.plist 关键键"
-          plutil -p "$BUILT" 2>/dev/null | grep -iE "UILaunchScreen|UISupportedInterfaceOrientations|UIRequiresFullScreen|CFBundleIdentifier|MinimumOSVersion" || echo "读不到 $BUILT"
+          plutil -p "$APP/Info.plist" 2>/dev/null | grep -iE "UILaunchScreen|UISupportedInterfaceOrientations|UIRequiresFullScreen|CFBundleIdentifier|MinimumOSVersion|NSExceptionDomains" || echo "读不到 $APP/Info.plist"
 
       - name: 无签名真机 ipa（Sideloadly/爱思在 PC 上重签用）
         run: |
