@@ -23,6 +23,24 @@ targets:
       - path: Sources
     info:
       path: Info.plist
+      # 这些键必须写在这儿，不能只写 iosApp/Info.plist：
+      # XcodeGen 的 info: 每次生成工程都会重写那个文件（文档 ProjectSpec.md：
+      # "this will generate and write an Info.plist to the specified path"），
+      # 手写那份在 CI 上会被盖掉 —— 8bcec04 之前那几发就是这个坑：
+      # xcodebuild 一直报"缺启动屏/缺方向"，而包里也确实没有 ATS 例外（真机上体育那台明文 http 会被系统拦）。
+      properties:
+        CFBundleDevelopmentRegion: zh_CN
+        CFBundleName: AndaXin
+        CFBundleDisplayName: 安大信
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # 只给跑量那台明文 http 的服务器开例外（对齐 Android 那份 network_security_config 的口径，不开全局放行）
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            sports.aiit.edu.cn:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
     dependencies:
       # 固定路径的静态 framework：脚本相位在每次构建前按 SDK/配置把对应 flavor
       # 拷到这里替换（见 preBuildScripts），CI 在 xcodegen 之前会先放一份占位。
