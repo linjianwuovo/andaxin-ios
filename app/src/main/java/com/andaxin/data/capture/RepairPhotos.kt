@@ -87,12 +87,19 @@ object RepairPhotos {
             ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
     }.getOrNull()
 
-    /** 先按 2 的幂降采样，别让一张一亿像素的原图整个进内存。 */
+    /**
+     * 先按 2 的幂降采样，别让一张一亿像素的原图整个进内存。
+     *
+     * 判据是 `原像素 / n² > 上限就把 n 翻倍` —— 解码器按 inSampleSize=n 出来的就是 `P/n²` 个像素。
+     * 写成除以 `(2n)²` 会提前停下：一张 4000×3000（12M）的会拿 n=1 整个解出来，
+     * ARGB_8888 就是 36MB，十张连着传能把这一屏的进程顶到被系统回收。
+     */
     private fun sampleOptions(bytes: ByteArray): BitmapFactory.Options {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val px = bounds.outWidth.toLong() * bounds.outHeight
         var sample = 1
-        while (bounds.outWidth.toLong() * bounds.outHeight / (sample * 2L) / (sample * 2L) > MAX_PIXELS) sample *= 2
+        while (px / (sample.toLong() * sample) > MAX_PIXELS) sample *= 2
         return BitmapFactory.Options().apply { inSampleSize = sample }
     }
 
