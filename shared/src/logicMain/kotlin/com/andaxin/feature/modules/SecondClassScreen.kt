@@ -2,11 +2,8 @@ package com.andaxin.feature.modules
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -16,10 +13,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.andaxin.app.LocalAppGraph
 import com.andaxin.core.design.Gap
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Type
+import com.andaxin.data.capture.CaptureSecondClass
 import com.andaxin.data.capture.ScApply
 import com.andaxin.data.capture.SecondClass
 import com.andaxin.feature.brief.ScaffoldPage
@@ -34,15 +31,23 @@ import com.andaxin.shell.Sheet
  * 只做有真报文的那两条读口（`credit/overview`、`credit/applications`）—— 可选活动那一屏
  * 参数抄全了但响应形状没实样，不拿猜的字段名往界面上摆；写口（申报、问卷、传附件）一条不接。
  * 数字全部原样显示：服务端给的是字符串（"0.05"），这里不做四舍五入、不换算。
+ *
+ * 平移注（10-25 夜）：安卓侧刚合进来的那一屏，搬进共享层时只把 `LocalAppGraph.current` 换成
+ * [SecondClassDeps] 注入 —— 这一屏原本就不碰任何安卓物（选图、闹钟、WebView 那些才需要缝）。
+ * app 那边留一层同名薄壳（`SecondClassTab.kt`），文件名不能跟这份一样：同包同名文件的
+ * 两个 facade 类会在 R8 撞车（消息批撞过一回）。
  */
+class SecondClassDeps(
+    val feed: CaptureSecondClass,
+)
+
 @Composable
-fun SecondClassScreen(onBack: () -> Unit) {
-    val graph = LocalAppGraph.current
+fun SecondClassScreen(deps: SecondClassDeps, onBack: () -> Unit) {
     val ink = LocalInk.current
     var data by remember { mutableStateOf<SecondClass?>(null) }
     var loading by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        data = graph.secondClass.load()
+        data = deps.feed.load()
         loading = false
     }
     ScaffoldPage(title = "第二课堂", onBack = onBack) {

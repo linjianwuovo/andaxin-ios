@@ -48,8 +48,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.andaxin.ios
-        MARKETING_VERSION: "0.8.28"
-        CURRENT_PROJECT_VERSION: "70"
+        # 跟安卓那份 app/build.gradle.kts 的 versionName/versionCode 同步抬（合并批 0.8.46 / 88）：
+        # 两端是同一套业务，版本号各走各的会让"这版有什么"对不上。
+        MARKETING_VERSION: "0.8.46"
+        CURRENT_PROJECT_VERSION: "88"
     preBuildScripts:
       - name: BuildSharedFramework
         script: |
