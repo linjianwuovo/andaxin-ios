@@ -34,28 +34,43 @@ jobs:
           brew install xcodegen xcbeautify
           cd iosApp && xcodegen -s project.yml
 
+      - name: 选一台模拟器（构建和截图共用这一台）
+        run: |
+          # 27944b6 那发：xcodebuild 按 name=iPhone 16 挑目标，在那台 VM 上直接 "Unable to find a device
+          # matching the provided destination specifier"，可用目标里只剩 My Mac / Any iOS Device ——
+          # 同样这条命令三十分钟前在另一台 VM 上是过的，所以是镜像差异，不是代码。
+          # 而且按名字挑还有个老毛病：构建走 OS:26.2 那台，截图那步 grep head -1 取到的是最旧 runtime 那台。
+          # 现在 job 开头选一台（simctl 的文本按运行时从旧到新分段，取最后出现的），
+          # 构建、安装、启动、截图全用同一个 id，两类错一起消掉。
+          DEVLIST=$(xcrun simctl list devices available)
+          pick() { printf '%s\n' "$DEVLIST" | grep "$1" | tail -1 | awk -F'[()]' '{print $2}'; }
+          SIM_UDID=$(pick 'iPhone 16 (')
+          [ -n "$SIM_UDID" ] || SIM_UDID=$(pick 'iPhone ')
+          [ -n "$SIM_UDID" ] || SIM_UDID=$(pick 'iPad')
+          if [ -z "$SIM_UDID" ]; then
+            echo "这台 VM 上没有可用的 iOS 模拟器，把现场留全："
+            xcrun simctl list runtimes || true
+            printf '%s\n' "$DEVLIST" | tail -40
+            exit 1
+          fi
+          echo "SIM_UDID=$SIM_UDID" >> "$GITHUB_ENV"
+          printf '%s\n' "$DEVLIST" | grep -E '^-- |iPhone|iPad' | tail -8
+          echo "选中这台：$SIM_UDID"
+
       - name: 模拟器构建（framework 由工程里那段 preBuildScript 按 SDK 现编现嵌）
         run: |
           set -o pipefail
           xcodebuild -project iosApp/AndaXin.xcodeproj \
             -scheme AndaXin -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO build \
             | xcbeautify
 
       - name: 模拟器装上、点亮、截屏
         run: |
-          # 选机：同型号里运行时最新的那台 iPhone 16。
-          # 8bcec04 那发栽在 jq 上（漏了 .devices，jq 退 5，这一步在启动 app 之前就死了）；
-          # 这次不依赖 jq 也不依赖 python —— simctl list 的文本输出按运行时从旧到新分段
-          # （-- iOS 18.5 -- / -- iOS 26.2 --），所以"最后一个 iPhone 16 ("就是最新那台。
-          # 老写法 grep | head -1 取到的正是最旧那台，而 xcodebuild 走的是 OS:26.2。
-          DEVLIST=$(xcrun simctl list devices available)
-          printf '%s\n' "$DEVLIST" | grep -E '^-- |iPhone 16 \(' | tail -12 || true
-          UDID=$(printf '%s\n' "$DEVLIST" | grep "iPhone 16 (" | tail -1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          RUNTIME=$(printf '%s\n' "$DEVLIST" | awk '/^-- /{r=$0} /iPhone 16 \(/{last=r} END{print last}')
-          echo "选中：${RUNTIME:-运行时未知} / ${UDID:-没选到}"
-          if [ -z "$UDID" ]; then echo "没有可用的 iPhone 16 模拟器，判这步失败"; exit 1; fi
+          UDID="$SIM_UDID"   # 就是"选一台模拟器"那步定下、xcodebuild 也用的那一台，不再自己另挑
+          echo "装机截图用这台：$UDID"
+          if [ -z "$UDID" ]; then echo "前面没选出模拟器（不该发生）"; exit 1; fi
           xcrun simctl boot "$UDID" || true
           APP=$(find build/Build/Products -name 'AndaXin.app' -path '*iphonesimulator*' | head -1)
           xcrun simctl install "$UDID" "$APP" || { echo "install 就失败了"; exit 1; }
