@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 
 /*
- * 桌面那枚图标可以换 —— 六套「尖顶 A」配色 + 现在那枚临时标记。
+ * 桌面那枚图标可以换 —— 五套「尖顶 A」配色，出厂立着的是第一枚（蓝底青杠）。
  *
  * 做法是 Android 那套 activity-alias：`AndroidManifest.xml` 里给每一枚图标挂一条 alias，
  * 都指向 `.MainActivity`，**只有选中的那条是 enabled**。换图标 = 开一条、关一条，
@@ -19,6 +19,8 @@ import android.content.pm.PackageManager
  *
  * 真图标是 `res/drawable/ic_launcher_fg_*.xml` + `ic_launcher_bg_*.xml` 那几份；
  * 这里那三个颜色只给 App 里那排预览用，两边是同一套数，改一处要改两处。
+ * （10-25 删了两枚：骨架期那枚方框「临时标记」，还有琥珀。方框删掉之后
+ *   `<application android:icon>` 也指到蓝底那套了，别再往 `@mipmap/ic_launcher` 改回去 —— 那份资源没了。）
  */
 
 /** 一枚可选的启动图标。 */
@@ -27,8 +29,6 @@ data class LauncherIcon(
     val label: String,
     /** manifest 里那条 activity-alias 的类名（相对包名，前面带点） */
     val alias: String,
-    /** 预览画什么：`a` = 尖顶 A，`box` = 现在那枚临时标记 */
-    val shape: String,
     val bg: Long,
     val ink: Long,
     val bar: Long,
@@ -37,16 +37,14 @@ data class LauncherIcon(
 object LauncherIcons {
 
     val ALL: List<LauncherIcon> = listOf(
-        LauncherIcon("default", "临时标记", ".LauncherDefault", "box", 0xFFF4F6F9, 0xFF2563EB, 0xFFFAFBFD),
-        LauncherIcon("blue", "蓝底青杠", ".LauncherBlue", "a", 0xFF2563EB, 0xFFFAFBFD, 0xFF0D9488),
-        LauncherIcon("paper", "纸白墨杠", ".LauncherPaper", "a", 0xFFF4F6F9, 0xFF191C22, 0xFF2563EB),
-        LauncherIcon("ink", "墨底青杠", ".LauncherInk", "a", 0xFF191C22, 0xFFFAFBFD, 0xFF0D9488),
-        LauncherIcon("teal", "青底蓝杠", ".LauncherTeal", "a", 0xFF0D9488, 0xFFFAFBFD, 0xFF2563EB),
-        LauncherIcon("indigo", "靛底青杠", ".LauncherIndigo", "a", 0xFF4338CA, 0xFFFAFBFD, 0xFF0D9488),
-        LauncherIcon("amber", "琥珀白杠", ".LauncherAmber", "a", 0xFFB45309, 0xFFFAFBFD, 0xFFF4F6F9),
+        LauncherIcon("blue", "蓝底青杠", ".LauncherBlue", 0xFF2563EB, 0xFFFAFBFD, 0xFF0D9488),
+        LauncherIcon("paper", "纸白墨杠", ".LauncherPaper", 0xFFF4F6F9, 0xFF191C22, 0xFF2563EB),
+        LauncherIcon("ink", "墨底青杠", ".LauncherInk", 0xFF191C22, 0xFFFAFBFD, 0xFF0D9488),
+        LauncherIcon("teal", "青底蓝杠", ".LauncherTeal", 0xFF0D9488, 0xFFFAFBFD, 0xFF2563EB),
+        LauncherIcon("indigo", "靛底青杠", ".LauncherIndigo", 0xFF4338CA, 0xFFFAFBFD, 0xFF0D9488),
     )
 
-    /** 桌面上现在立着的是哪一枚。全被关掉了（不该发生）就回默认那枚。 */
+    /** 桌面上现在立着的是哪一枚。全被关掉了（不该发生）就回第一枚。 */
     fun current(context: Context): LauncherIcon =
         ALL.firstOrNull { enabled(context, it) } ?: ALL.first()
 
@@ -54,9 +52,9 @@ object LauncherIcons {
         val cn = ComponentName(context.packageName, context.packageName + icon.alias)
         val state = runCatching { context.packageManager.getComponentEnabledSetting(cn) }
             .getOrDefault(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT)
-        // DEFAULT 对 alias 来说就是 manifest 里写的那个 enabled：只有默认那枚是 true
+        // DEFAULT 对 alias 来说就是 manifest 里写的那个 enabled：只有第一枚是 true
         return state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED ||
-            (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && icon.key == "default")
+            (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && icon == ALL.first())
     }
 
     /**

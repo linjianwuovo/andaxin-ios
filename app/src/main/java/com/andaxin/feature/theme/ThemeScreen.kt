@@ -238,7 +238,7 @@ fun ThemeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * 「启动图标」那一格：七枚可选（现在那枚临时标记 + 六套尖顶 A 配色）。
+ * 「启动图标」那一格：五枚可选，全是尖顶 A 那套配色（出厂立着的是蓝底青杠）。
  *
  * 点一下就换 —— 这一步动的是系统里的组件开关（见 core/launcher/LauncherIcons.kt），
  * 不碰学校、不碰网络，所以没上连按两次；但失败一定把原因贴出来，不闷声。
@@ -260,7 +260,7 @@ private fun LauncherIconSection() {
     }
 
     Sheet {
-        LauncherIcons.ALL.chunked(4).forEach { row ->
+        LauncherIcons.ALL.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(Gap.lg)) {
                 row.forEach { ic ->
                     val on = ic.key == now.key
@@ -328,24 +328,14 @@ private fun IconPreview(ic: LauncherIcon, on: Boolean) {
             val dy = -18f * s
             val line = Color(ic.ink.toInt())
             val bar = Color(ic.bar.toInt())
-            if (ic.shape == "box") {
-                drawRoundRect(
-                    line,
-                    Offset(dx + 26f * s, dy + 32f * s),
-                    Size(56f * s, 44f * s),
-                    CornerRadius(8f * s),
-                )
-                drawRect(bar, Offset(dx + 30f * s, dy + 46f * s), Size(48f * s, 6f * s))
-            } else {
-                // 数要和 res 里那六份 vector 一模一样（同一批坐标、同一根线宽 9.4）。
-                // 那批坐标是绕中心缩过一遍的（0.665）：桌面会把 108 中间 72 那扇窗放大 1.5 倍，
-                // 缩完再放大，落到桌面上才是这一排预览原来那个大小 —— 他要的是外面照里面改，
-                // 不是把里面改成外面那样，所以动的是资源，这里只是跟着抄。
-                val w = 9.4f * s
-                drawLine(line, Offset(dx + 36.42f * s, dy + 71.11f * s), Offset(dx + 54f * s, dy + 36.57f * s), w, StrokeCap.Round)
-                drawLine(line, Offset(dx + 54f * s, dy + 36.57f * s), Offset(dx + 70.25f * s, dy + 71.11f * s), w, StrokeCap.Round)
-                drawLine(bar, Offset(dx + 45.02f * s, dy + 57.92f * s), Offset(dx + 62.98f * s, dy + 57.92f * s), w, StrokeCap.Round)
-            }
+            // 数要和 res 里那五份 vector 一模一样（同一批坐标、同一根线宽 9.4）。
+            // 那批坐标是绕中心缩过一遍的（0.665）：桌面会把 108 中间 72 那扇窗放大 1.5 倍，
+            // 缩完再放大，落到桌面上才是这一排预览原来那个大小 —— 他要的是外面照里面改，
+            // 不是把里面改成外面那样，所以动的是资源，这里只是跟着抄。
+            val w = 9.4f * s
+            drawLine(line, Offset(dx + 36.42f * s, dy + 71.11f * s), Offset(dx + 54f * s, dy + 36.57f * s), w, StrokeCap.Round)
+            drawLine(line, Offset(dx + 54f * s, dy + 36.57f * s), Offset(dx + 70.25f * s, dy + 71.11f * s), w, StrokeCap.Round)
+            drawLine(bar, Offset(dx + 45.02f * s, dy + 57.92f * s), Offset(dx + 62.98f * s, dy + 57.92f * s), w, StrokeCap.Round)
         }
     }
 }
