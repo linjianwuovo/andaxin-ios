@@ -101,11 +101,21 @@ jobs:
           otool -L "$APP/AndaXin" 2>/dev/null | head -12 || echo "读不到 app 二进制"
           echo "--- 统一日志（最多 140 行，崩因就在这儿）"
           head -140 simlog.txt 2>/dev/null || echo "log stream 一行都没抓到"
-          # 崩溃报告两处都翻：runner 用户目录，和这台模拟器自己的数据目录
-          for d in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/CrashReporter"; do
-            find "$d" -iname '*AndaXin*' -mmin -20 2>/dev/null | while read -r c; do
-              echo "--- 崩溃报告 $c"; head -80 "$c"
+          # 崩溃报告找对地方：模拟器里 app 的 .ips 落在【这台设备 data 下的 DiagnosticReports】，
+          # 我上一版找的是 data/Library/Logs/CrashReporter —— 那个目录压根不放 app 崩溃，所以翻出来是空的。
+          # .ips 第一行是元数据、第二行是一整行 JSON 载荷，所以按字节切而不是按行 head。
+          for d in "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/DiagnosticReports" \
+                   "$HOME/Library/Logs/DiagnosticReports"; do
+            echo "--- 翻 $d"
+            find "$d" -name '*.ips' -mmin -10 2>/dev/null | while read -r c; do
+              echo "===== $c"
+              head -2 "$c" | cut -c1-2000
             done
+          done
+          echo "--- 设备里那份 stderr（Kotlin/Native 的未捕获异常打在这）"
+          tail -60 "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/System/Log/kernel.txt" 2>/dev/null || true
+          for f in $(find "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs" -name '*.txt' -o -name 'system.log' 2>/dev/null | head -3); do
+            echo "===== $f"; tail -40 "$f"
           done
           echo "--- 系统日志里的 AndaXin"
           xcrun simctl spawn "$UDID" log show --style compact --last 3m --predicate 'process == "AndaXin"' 2>/dev/null | tail -30 || true
