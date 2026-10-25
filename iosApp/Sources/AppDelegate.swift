@@ -26,10 +26,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window?.rootViewController = splashHolder()
         window?.makeKeyAndVisible()
 
-        // signedIn() 挂起查 DataStore；launchMain 在主线程协程里回，直接切根是安全的
-        g.launchMain { [weak self] in
-            // Kotlin 的 Boolean 过桥是 KotlinBoolean，.boolValue 才是 Swift 的 Bool
-            let signed = g.session.signedIn().boolValue
+        // Gate 的挂起细节全在 Kotlin 侧消化，Swift 只拿同步回调
+        g.resolveGate { [weak self] signed in
             if signed {
                 self?.window?.rootViewController = self?.makeTabs(g)
             } else {

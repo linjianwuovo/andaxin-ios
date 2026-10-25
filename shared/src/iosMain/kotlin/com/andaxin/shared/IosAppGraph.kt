@@ -79,10 +79,21 @@ class IosAppGraph(documentsPath: String) {
     val timetableModel = TimetableModel(timetableFeed)
 
     /**
-     * 给 Swift 的协程启动口：block 在主线程协程里跑。Kotlin 的 suspend 从 Swift
-     * 直接调会回 completionHandler 闭包、嵌套起来很丑，这里包一层让 Swift 写顺序代码。
+     * 给 Swift 的协程启动口：block 在主线程协程里跑。suspend 的细节（async/throws 过桥）
+     * 全留在 Kotlin 侧消化，Swift 只拿同步回调——Swift 闭包里不许出现 await/try。
      */
     fun launchMain(block: () -> Unit) {
         scope.launch { block() }
+    }
+
+    /**
+     * 启动期的 Gate：挂起查完登录态，回主线程把结果告诉 Swift（isSignedIn 是普通 Boolean）。
+     * Swift 侧一个 await/try 都不用写。
+     */
+    fun resolveGate(onResolved: (isSignedIn: Boolean) -> Unit) {
+        scope.launch {
+            val signed = session.signedIn()
+            onResolved(signed)
+        }
     }
 }
