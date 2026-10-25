@@ -175,6 +175,7 @@ jobs:
           BODY="未签名 ipa：在 Windows 上用 Sideloadly 或爱思拿免费 Apple ID 重签再装。提交 $SHORT；模拟器截屏在 Actions 的 ios-artifacts 产物包里。"
           code=$(curl -sS -o rel.json -w '%{http_code}' -X POST "$API/releases" \
             -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
             -d "{\"tag_name\":\"$TAG\",\"name\":\"iOS 骨架 $SHORT\",\"target_commitish\":\"$GITHUB_REF_NAME\",\"prerelease\":true,\"body\":\"$BODY\"}")
           echo "建 Release: HTTP $code"
           if [ "$code" = "422" ]; then
