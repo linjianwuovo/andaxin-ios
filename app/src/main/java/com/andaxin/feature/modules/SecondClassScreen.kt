@@ -68,7 +68,10 @@ fun SecondClassScreen(onBack: () -> Unit) {
                         d.modules.forEachIndexed { i, m ->
                             Labeled(
                                 label = m.name,
-                                value = m.credit + "（认定 " + m.count + " 条）",
+                                // 一个模块一条记录都没有时，服务端那个 totalCredit 是空的 ——
+                                // 原来直接拼，那一行就变成光秃秃一个「（认定 0 条）」，像漏了字。
+                                value = (if (m.credit.isBlank()) "—" else m.credit) +
+                                    "（认定 " + m.count + " 条）",
                             )
                             if (i != d.modules.lastIndex) {
                                 Spacer(Modifier.height(Gap.sm))
