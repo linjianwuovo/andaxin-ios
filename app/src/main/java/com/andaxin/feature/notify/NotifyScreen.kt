@@ -57,10 +57,11 @@ fun NotifyScreen(onBack: () -> Unit) {
 }
 
 /**
- * 上课提醒那一行。三句话得说明白，少一句都会让人误解它，但**不摆在大路上**：
+ * 上课提醒那一行。四句话得说明白，少一句都会让人误解它，但**不摆在大路上**：
  * ① 节次时间是我们自己排的那张表，校方没有一条接口给过；
  * ② 它用系统闹钟那条路，状态栏会亮一个闹钟图标；
- * ③ 重启之后能不能自己排回去，看的是 ROM 的"自启动"，那个开关我们碰不到。
+ * ③ 重启之后能不能自己排回去，看的是 ROM 的"自启动"，那个开关我们碰不到；
+ * ④ 从提前量那一分钟起，同一条通知每分钟刷一次"还有 N 分钟"，只有第一条出声。
  */
 @Composable
 private fun ClassReminderRow() {
@@ -76,7 +77,7 @@ private fun ClassReminderRow() {
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { granted ->
         needPermission = false
-        if (granted) status = "通知权限有了，下一节开始前会提醒一次。"
+        if (granted) status = "通知权限有了。下一节课前 $lead 分钟起，倒计时会开始往通知上刷。"
     }
 
     LaunchedEffect(Unit) {
@@ -93,7 +94,10 @@ private fun ClassReminderRow() {
                 com.andaxin.core.schedule.ClassReminder.KEY_ON to if (nv) "1" else "0",
                 com.andaxin.core.schedule.ClassReminder.KEY_LEAD to nLead.toString(),
             )
-            status = com.andaxin.core.schedule.ClassReminder.reschedule(graph.context, graph.store, graph.timetable)
+            // fromUser = 他亲手拨的：正在跑的倒计时链一起撤掉，别让他按了关还看见"还有 12 分钟"
+            status = com.andaxin.core.schedule.ClassReminder.reschedule(
+                graph.context, graph.store, graph.timetable, fromUser = true,
+            )
         }
         if (nv && !androidx.core.app.NotificationManagerCompat.from(graph.context).areNotificationsEnabled()) {
             needPermission = true
@@ -109,7 +113,7 @@ private fun ClassReminderRow() {
             Text("上课提醒", fontSize = Type.title, fontWeight = FontWeight.Medium, color = ink.strong)
             Spacer(Modifier.height(1.dp))
             Text(
-                text = if (on) "开 · 每节课开始前 $lead 分钟响一次" else "没开",
+                text = if (on) "开 · 课前 $lead 分钟起，通知每分钟把倒计时刷一次" else "没开",
                 fontSize = Type.meta,
                 color = if (needPermission) MaterialTheme.colorScheme.error else ink.muted,
             )

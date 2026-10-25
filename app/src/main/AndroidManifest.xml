@@ -141,12 +141,17 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- 上课提醒那颗闹钟。exported=false：只接自己包内投的广播 -->
+        <!--
+          上课提醒那两颗闹钟：CLASS_REMIND 是"提前量到点"那一颗，CLASS_TICK 是课前窗口里
+          每分钟自己接下一颗的那条滴答（见 core/schedule/ClassReminder.kt 顶上第 ④ 条）。
+          exported=false：只接自己包内投的广播
+        -->
         <receiver
             android:name="com.andaxin.core.schedule.ReminderReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.andaxin.action.CLASS_REMIND" />
+                <action android:name="com.andaxin.action.CLASS_TICK" />
             </intent-filter>
         </receiver>
 
