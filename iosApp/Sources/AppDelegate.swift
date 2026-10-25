@@ -18,6 +18,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // 系统那条栏：实心、跟 App 底色一路（默认的半透明磨砂在长列表滚起来会糊成一片）。
+        // 走 UINavigationBar.appearance 是因为五格各自有自己的导航栈，逐台配会漏。
+        let bar = UINavigationBarAppearance()
+        bar.configureWithOpaqueBackground()
+        UINavigationBar.appearance().standardAppearance = bar
+        UINavigationBar.appearance().scrollEdgeAppearance = bar
+
         // 拿不到 Documents 就退到 Caches、再退到临时目录：
         // 之前兜底成空串，路径会变成 "/andaxin.preferences_pb"（文件系统根），
         // 读有 runCatching 兜着看不出来，一写就炸。
@@ -58,22 +65,27 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
-    /// 五格底栏：标题跟 Android 那五格一致；图标下一批接 SF Symbols
+    /// 五格底栏：标题跟 Android 那五格一致；图标用系统 SF Symbols（不再等美术出图）。
     private func makeTabs(_ g: IosAppGraph) -> UITabBarController {
         let tabs = UITabBarController()
 
-        let home = g.homeViewController()
-        home.title = "首页"
-        let timetable = g.timetableViewController()
-        timetable.title = "课表"
-        let message = g.messageViewController()
-        message.title = "消息"
-        let notice = g.noticeViewController()
-        notice.title = "公告"
-        let me = g.meViewController()
-        me.title = "我的"
+        // 每屏在 Kotlin 侧已经包进自己的 UINavigationController，这里只贴底栏那一格
+        let items: [(UIViewController, String, String)] = [
+            (g.homeViewController(), "首页", "house"),
+            (g.timetableViewController(), "课表", "calendar"),
+            (g.messageViewController(), "消息", "envelope"),
+            (g.noticeViewController(), "公告", "megaphone"),
+            (g.meViewController(), "我的", "person.crop.circle"),
+        ]
+        for (vc, title, symbol) in items {
+            vc.tabBarItem = UITabBarItem(
+                title: title,
+                image: UIImage(systemName: symbol),
+                selectedImage: UIImage(systemName: symbol)
+            )
+        }
 
-        tabs.viewControllers = [home, timetable, message, notice, me]
+        tabs.viewControllers = items.map { $0.0 }
         tabs.tabBar.isTranslucent = true
         return tabs
     }

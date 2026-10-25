@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.andaxin.core.design.Gap
 import com.andaxin.core.design.LocalInk
 import com.andaxin.core.design.Type
+import com.andaxin.core.ui.hostDrawsTopBar
 import com.andaxin.shell.Refreshable
 import com.andaxin.shell.pressClick
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -32,7 +33,11 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  *
  * 换成 Miuix 的 `Scaffold` + `SmallTopAppBar`：HyperOS 那一档标题栏自带状态栏与
  * 刘海的留白，以前是我们手搓一个 `Spacer(Gap.xl)` 顶出来的，换个机型就得重调一次。
- * 返回那颗键仍然写"‹ 返回"三个字 —— 这仓的返回入口一直是这个说法，不换图标。
+ * 返回那颗键在**安卓**上仍然写"‹ 返回"三个字 —— 这仓的返回入口一直是这个说法，不换图标。
+ *
+ * iOS 上整条顶栏不画（`hostDrawsTopBar`）：屏包在 `UINavigationController` 里，
+ * 标题走 `navigationItem.title`、返回走系统那颗，右滑返回手势也只认系统那条栏。
+ * 他 10-25 的原话是「返回键用 ios 官方的接口 ui」，口径同「搬屏不搬壳」。
  */
 @Composable
 fun ScaffoldPage(
@@ -42,19 +47,22 @@ fun ScaffoldPage(
     onRefresh: (suspend () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val hosted = hostDrawsTopBar
     Scaffold(
         topBar = {
-            SmallTopAppBar(
-                title = title,
-                navigationIcon = {
-                    Text(
-                        "‹ 返回",
-                        fontSize = Type.body,
-                        color = LocalInk.current.muted,
-                        modifier = Modifier.pressClick(shrink = false, onClick = onBack).padding(horizontal = Gap.md, vertical = Gap.sm),
-                    )
-                },
-            )
+            if (!hosted) {
+                SmallTopAppBar(
+                    title = title,
+                    navigationIcon = {
+                        Text(
+                            "‹ 返回",
+                            fontSize = Type.body,
+                            color = LocalInk.current.muted,
+                            modifier = Modifier.pressClick(shrink = false, onClick = onBack).padding(horizontal = Gap.md, vertical = Gap.sm),
+                        )
+                    },
+                )
+            }
         },
         containerColor = topBarBackdrop(),
     ) { bars ->

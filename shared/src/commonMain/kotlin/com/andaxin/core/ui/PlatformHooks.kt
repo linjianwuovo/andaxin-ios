@@ -19,3 +19,14 @@ import androidx.compose.runtime.Composable
  */
 @Composable
 expect fun clickHaptic(): () -> Unit
+
+/**
+ * 这一端的宿主自己画不画顶部那条栏（标题 + 返回）。
+ *
+ * 安卓 = false：NavHost 里那些页是我们自己画的顶栏，`ScaffoldPage` 照旧出 "‹ 返回"。
+ * iOS = true：屏进 `UINavigationController`，标题走 `navigationItem.title`、返回走系统那颗
+ *            带中文 locale 的 `<` —— 他定的口径「搬屏不搬壳」，共享层再画一颗就是两条栏、
+ *            两个返回，而且系统那个右滑返回手势才认得。
+ * JVM（测试架）= false，跟安卓一致。
+ */
+expect val hostDrawsTopBar: Boolean
