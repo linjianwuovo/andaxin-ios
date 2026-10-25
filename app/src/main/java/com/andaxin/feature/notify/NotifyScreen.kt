@@ -61,7 +61,7 @@ fun NotifyScreen(onBack: () -> Unit) {
  * ① 节次时间是我们自己排的那张表，校方没有一条接口给过；
  * ② 它用系统闹钟那条路，状态栏会亮一个闹钟图标；
  * ③ 重启之后能不能自己排回去，看的是 ROM 的"自启动"，那个开关我们碰不到；
- * ④ 从提前量那一分钟起，同一条通知每分钟刷一次"还有 N 分钟"，只有第一条出声。
+ * ④ 从提前量那一分钟起，同一条通知每分钟刷一次"还有 N 分钟"，到点换成"现在上课"，全程不出声。
  */
 @Composable
 private fun ClassReminderRow() {
@@ -113,7 +113,7 @@ private fun ClassReminderRow() {
             Text("上课提醒", fontSize = Type.title, fontWeight = FontWeight.Medium, color = ink.strong)
             Spacer(Modifier.height(1.dp))
             Text(
-                text = if (on) "开 · 课前 $lead 分钟起，通知每分钟把倒计时刷一次" else "没开",
+                text = if (on) "开 · 课前 $lead 分钟起，通知每分钟刷一次倒计时（不响）" else "没开",
                 fontSize = Type.meta,
                 color = if (needPermission) MaterialTheme.colorScheme.error else ink.muted,
             )

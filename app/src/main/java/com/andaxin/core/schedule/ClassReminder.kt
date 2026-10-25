@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 /*
  * 上课提醒。
  *
- * 三件事决定它长这样：
+ * 五件事决定它长这样：
  *
  * ① **节次表是我们自己拍的**。抓到的接口里没有一条给"第几节几点上课"（见 `Periods` 顶上那段），
  *    所以这条通知说的时间不是校方给的。设置那一行把这句话写明白了，不藏。
@@ -44,14 +44,16 @@ import kotlinx.coroutines.launch
  *    这么排是因为一次排二十颗既费电，也容易被 ROM 的闹钟调度掐掉几条 —— 链断了最多是少刷一次，
  *    下一节的闹钟照旧在那儿。"还剩几分钟"每次都**从墙钟现减**，不靠"我醒了几次"（跟
  *    `RunEngine` 读秒同一个道理）：Doze 把某一颗压晚了，醒来那一趟照样报对的数。
+ * ⑤ **一声不响**（同日他补的一句"不要响"）。做法两道一起上，少一道都盖不全，见 `ensureChannel`。
  */
 object ClassReminder {
 
     const val CHANNEL_ID = "andaxin.class"
     /** 倒计时那一条（课前窗口里每分钟换一次文字，始终是这一条）。 */
     const val NOTE_ID = 3201
-    /** 真正上课那一刻那一条。另开一个号，是为了让它能重新响一声 ——
-     *  倒计时那条用了 `setOnlyAlertOnce`，同一条号再刷是不出声的。 */
+    /** 老号：0.8.45 那一版的"现在上课"发在这条上（当时为了让它能再响一声）。
+     *  现在一条都不响，两条并成 NOTE_ID 了；这个号只留着"见到就清掉"，
+     *  免得从那一版覆盖安装上来的人，通知栏里挂着一张没人管的旧通知。 */
     const val STARTED_ID = 3202
 
     const val KEY_ON = "remind.on"
@@ -91,11 +93,21 @@ object ClassReminder {
     fun leadOf(p: androidx.datastore.preferences.core.Preferences, s: Store): Int =
         s.peekString(p, KEY_LEAD)?.toIntOrNull()?.takeIf { it in LEADS } ?: DEFAULT_LEAD
 
+    /**
+     * 这条通知**不出声**（10-25 他一句"不要响"）。两道一起上：
+     * ① 新装的机器：这条道上的通知渠道本身就带默认铃声，所以建渠道时把声音和震动清掉；
+     * ② 已经装着 0.8.44/0.8.45 的机器：渠道建完就不许应用再改声音了（那是用户的权利），
+     *    只能每条通知自己按下去 —— `setSilent(true)`（31 起才有，闸门写在被调那一行本体上）。
+     * 渠道还是 DEFAULT 那一档：这一档本来就不弹横幅，只是原来会响，现在连响也没有了。
+     */
     fun ensureChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "上课提醒", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "从课前那个提前量起，每分钟把这条通知的倒计时刷一遍，直到上课。" +
+                description = "从课前那个提前量起，每分钟把这条通知的倒计时刷一遍，直到上课。不响。" +
                     "节次时间是我们自己排的表，不是校方给的。"
+                setSound(null, null)
+                enableVibration(false)
+                vibrationEffect = null
             },
         )
     }
@@ -273,12 +285,14 @@ object ClassReminder {
     /**
      * 课前窗口里每分钟醒一次要做的两件事：把同一条通知的文字换成"还有 N 分钟"，再排下一分钟那颗。
      *
+     * 全程不出声（他 10-25 一句"不要响"）：整条链刷的都是同一个号、都带 `setSilent`，
+     * 所以数到 0 也只是把那一行换成"现在上课"，不再另开一条。
+     *
      * 回 true = 链还在跑，接收者什么都不用做；回 false = 这条链到此为止，接收者去接下一节的窗口。
      * 两种"到此为止"：
-     * ① N 数到 0 —— 撤掉倒计时那条，换"现在上课"（另开一条号，这样它能重新响一声；
-     *    倒计时那条全程 `setOnlyAlertOnce`，同号再刷是不出声的）；
+     * ① N 数到 0，"现在上课"那一条已经发出去；
      * ② 下一分钟那颗排不上（这条广播里调闹钟被 ROM 顶回来了）。当场补救一次：只排在上课
-     *    那一刻发"现在上课"那一发；再排不上就彻底放手，让接收者去排下一节 ——
+     *    那一刻发那一发；再排不上就彻底放手，让接收者去排下一节 ——
      *    链断在哪儿就在哪儿停，不炸 App，也不把往后全天搭进去。
      *
      * 某一分钟被 Doze 压晚了也不会把数算歪：N 每次都从 `startMs` 现减，不是"上次数 + 1"。
@@ -287,12 +301,12 @@ object ClassReminder {
         ensureChannel(context)
         val nm = context.getSystemService(NotificationManager::class.java)
         val left = minutesLeft(startMs)
-        if (left <= 0) {
-            nm.cancel(NOTE_ID)
-            nm.notify(STARTED_ID, build(context, course, room, period, at, 0, silent = false))
-            return false
-        }
-        nm.notify(NOTE_ID, build(context, course, room, period, at, left, silent = true))
+        // 0.8.45 那一版把"现在上课"发在另一个号上，为的是让它能再响一声。现在全程不许响，
+        // 两条并成一条；那个旧号见到就顺手清掉，不然从那一版覆盖安装上来的人，
+        // 通知栏里会一直挂着一条没人管的"现在上课"。
+        nm.cancel(STARTED_ID)
+        nm.notify(NOTE_ID, build(context, course, room, period, at, left))
+        if (left <= 0) return false
         val pi = tickIntent(context, course, room, at, period, startMs)
         val now = System.currentTimeMillis()
         // 排在"这个数该翻牌的那一刻"再晚 1.5 秒：早一步会把同一个数再报一遍；
@@ -323,7 +337,6 @@ object ClassReminder {
         period: Int,
         at: String,
         left: Int,
-        silent: Boolean,
     ): Notification {
         val open = PendingIntent.getActivity(
             context, NOTE_ID,
@@ -345,9 +358,12 @@ object ClassReminder {
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            // 倒计时每分钟刷一次，别每分钟响一遍：第一条出声，往后同一条只换文字。
-            // 到点那一条换了个号（STARTED_ID），所以它还能响一声。
-            .setOnlyAlertOnce(silent)
+            // 一条都不响（10-25 他"不要响"）。两道一起上：建渠道时就把声音清了，
+            // 这一句管已经装着旧渠道的机器 —— 渠道建完应用就改不动它的声音了，只能按条压。
+            // FLAG_SILENT 是 31 起的，NotificationCompat 里带了闸门；26~30 上从 0.8.45
+            // 覆盖安装上来的那些机器仍会照旧渠道响一次，那是渠道的事，不是这条的。
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
             // 一条活到上课就作废的通知，角上挂个"几分钟前"只会让人误读它是什么时候发的
             .setShowWhen(false)
             .setContentIntent(open)
