@@ -53,7 +53,9 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl launch "$UDID" com.andaxin.ios
           sleep 5
-          xcrun simctl io "$UDID" screenshot simulator-launch.png
+          # 写到 iosApp/ 下：上传清单里那条路径就是 iosApp/simulator-launch.png，
+          # 落在仓库根目录会被 upload-artifact 静默漏掉（f069f85 那发就是这样少了一张图）
+          xcrun simctl io "$UDID" screenshot iosApp/simulator-launch.png
 
       - name: 无签名真机 ipa（Sideloadly/爱思在 PC 上重签用）
         run: |
