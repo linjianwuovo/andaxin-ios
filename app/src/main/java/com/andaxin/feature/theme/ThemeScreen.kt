@@ -302,12 +302,12 @@ private fun LauncherIconSection() {
 }
 
 /**
- * 预览画的就是真图标那套几何（108 视口、同一批坐标、同一根线宽），
- * 但**按桌面那一套裁**：只把 108 中间那扇 72×72 的窗撑满整格。
+ * 这一格画的就是桌面上那一枚会长的样子 —— 同一批数、同一个裁法。
  *
- * 这一条是 10-25 量出来的，不是推的。米11 桌面上那一格 218 px 宽，里面那枚方框（资源里占 56/108）
- * 实测 170 px —— 52% 变 78%，比值 1.5，正好是 108/72 那个安全区缩放。
- * 以前预览把整个 108 塞进格子，所以每一枚都比桌面小一圈，他说"大小不一样"就是这个。
+ * 桌面不是把 108 的画布整个铺满一格，而是取中间那扇 72×72 的窗放大 1.5 倍。这条是量出来的：
+ * 米11 那一格 218 px 宽、里面那枚方框（资源里占 56/108）实测 170 px，52 变 78（百分比），比值正好 1.5。
+ * 所以预览也按这扇窗画。而"预览那个大小"是他挑图标时看到的那个：要外面照里面来，
+ * 动的是 `res/drawable/ic_launcher_fg_*.xml` 那六份的坐标（缩到 0.665），不是把预览改成桌面上那个。
  */
 @Composable
 private fun IconPreview(ic: LauncherIcon, on: Boolean) {
@@ -337,11 +337,14 @@ private fun IconPreview(ic: LauncherIcon, on: Boolean) {
                 )
                 drawRect(bar, Offset(dx + 30f * s, dy + 46f * s), Size(48f * s, 6f * s))
             } else {
-                // 线宽照 res 里那份 vector 的 8.86，不再为了"看得清"擅自加粗 —— 加粗就成了另一枚图标
-                val w = 8.86f * s
-                drawLine(line, Offset(dx + 27.56f * s, dy + 79.73f * s), Offset(dx + 54f * s, dy + 27.79f * s), w, StrokeCap.Round)
-                drawLine(line, Offset(dx + 54f * s, dy + 27.79f * s), Offset(dx + 78.47f * s, dy + 79.73f * s), w, StrokeCap.Round)
-                drawLine(bar, Offset(dx + 40.5f * s, dy + 59.9f * s), Offset(dx + 67.5f * s, dy + 59.9f * s), w, StrokeCap.Round)
+                // 数要和 res 里那六份 vector 一模一样（同一批坐标、同一根线宽 9.4）。
+                // 那批坐标是绕中心缩过一遍的（0.665）：桌面会把 108 中间 72 那扇窗放大 1.5 倍，
+                // 缩完再放大，落到桌面上才是这一排预览原来那个大小 —— 他要的是外面照里面改，
+                // 不是把里面改成外面那样，所以动的是资源，这里只是跟着抄。
+                val w = 9.4f * s
+                drawLine(line, Offset(dx + 36.42f * s, dy + 71.11f * s), Offset(dx + 54f * s, dy + 36.57f * s), w, StrokeCap.Round)
+                drawLine(line, Offset(dx + 54f * s, dy + 36.57f * s), Offset(dx + 70.25f * s, dy + 71.11f * s), w, StrokeCap.Round)
+                drawLine(bar, Offset(dx + 45.02f * s, dy + 57.92f * s), Offset(dx + 62.98f * s, dy + 57.92f * s), w, StrokeCap.Round)
             }
         }
     }
