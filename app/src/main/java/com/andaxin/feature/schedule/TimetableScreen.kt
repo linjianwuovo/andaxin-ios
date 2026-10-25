@@ -416,24 +416,24 @@ private fun CourseCell(slot: TimetableSlot, span: Int, now: Boolean, rowH: Dp, s
             fontSize = Type.tiny,
             fontWeight = FontWeight.Medium,
             color = Color.White,
-            maxLines = if (span >= 2) 3 else 2,
+            // 三节往上的块高出一大截，课名多给一行（"大学生心理健康教育" 不再被掐断）
+            maxLines = if (span >= 3) 4 else if (span >= 2) 3 else 2,
             lineHeight = Type.tinyLine,
             overflow = TextOverflow.Ellipsis,
         )
-        if (span >= 2) {
-            Spacer(Modifier.height(1.dp))
-            Text(
-                text = shortRoom(slot.room),
-                fontSize = Type.tinier,
-                color = Color.White.copy(alpha = 0.86f),
-                // 教室只给一行，而一列才 57dp 上下 ——「博雅A1区 102」这种就被掐成「博雅A1 …」，
-                // 块的下半截却空着一大片。让它按块高换行：两节的块给两行，三节往上给三行。
-                // （行宽不够是列宽定的，改不了；能改的是别浪费块里已有的高度。）
-                maxLines = if (span >= 3) 3 else 2,
-                lineHeight = Type.tinierLine,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Spacer(Modifier.height(1.dp))
+        Text(
+            text = shortRoom(slot.room),
+            fontSize = Type.tinier,
+            color = Color.White.copy(alpha = 0.86f),
+            // 教室只给一行，而一列才五十几 dp ——「博雅A1区 102」这种就被掐成「博雅A1 …」，
+            // 块的下半截却空着一大片。让它按块高换行：两节两行、三节往上三行。
+            // 单节那一格反过来卡在一行：块高就那么多，再把字号档调大一点就要溢到块外面去了。
+            // （行宽不够是列宽定的，六列除屏幕宽，改不了；能改的是别浪费块里已有的高度。）
+            maxLines = if (span >= 3) 3 else if (span >= 2) 2 else 1,
+            lineHeight = Type.tinierLine,
+            overflow = TextOverflow.Ellipsis,
+        )
         // 不再写"第 1-2 节"：块占几行本身已经说了这件事，而格子很窄，
         // 多这一行就是把课名挤成"高等数…"的那只手（10-20 装机他嫌难看的就是这个）。
     }
