@@ -250,6 +250,15 @@ private fun LauncherIconSection() {
     var now by remember { mutableStateOf(LauncherIcons.current(ctx)) }
     var why by remember { mutableStateOf<String?>(null) }
 
+    /*
+     * 每次回到这一屏都从系统重读一次"现在立着的是哪枚"。
+     * 只 remember 一次会骗人：他在桌面上动过、或者换过一次之后再看这一格，
+     * 圈可能还圈在旧的那枚上（10-25 他截图里就是这么个错位）。
+     */
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        now = LauncherIcons.current(ctx)
+    }
+
     Sheet {
         LauncherIcons.ALL.chunked(4).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(Gap.lg)) {
@@ -263,7 +272,7 @@ private fun LauncherIconSection() {
                                 onSuccess = {
                                     now = ic
                                     why = "已换上「${ic.label}」。桌面那枚一般马上变；" +
-                                        "个别 ROM 要回一次桌面才刷新。"
+                                        "多出来那枚旧的是桌面缓存，重启桌面就没了。"
                                 },
                                 onFailure = { why = "没换成：${it.message ?: it.javaClass.simpleName}" },
                             )
@@ -283,7 +292,8 @@ private fun LauncherIconSection() {
             Spacer(Modifier.height(Gap.md))
         }
         Text(
-            text = why ?: "换的不只是好看：桌面那枚和最近任务里那枚都会跟着变。",
+            text = why ?: "换的是桌面那枚和最近任务里那枚。MIUI 这类桌面换完会多留一枚旧的" +
+                "（旧那枚的名字可能还是以前那个），系统里其实只有一条入口 —— 重启桌面或重启手机就干净了。",
             fontSize = Type.micro,
             color = if (why == null) ink.faint else ink.muted,
             lineHeight = Type.metaLine,
