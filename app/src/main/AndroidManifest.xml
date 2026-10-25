@@ -157,6 +157,20 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!--
+          覆盖安装完那一条广播：只用来把桌面入口补回来。
+          0.8.40 删过两条 activity-alias，而组件开关跨覆盖安装保留 —— 之前在这排里选过那两枚的人，
+          升级完可能一条入口都不剩，那时候 App 连打开的机会都没有，只能靠这一发。
+          系统送的受保护广播，非导出也收得到。
+        -->
+        <receiver
+            android:name="com.andaxin.core.launcher.ReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

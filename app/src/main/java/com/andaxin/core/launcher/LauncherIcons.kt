@@ -58,6 +58,20 @@ object LauncherIcons {
     }
 
     /**
+     * 一条入口都没开着就把第一枚开回来。
+     *
+     * 为什么需要这一手：0.8.40 删掉了「临时标记」和「琥珀」两条 alias，而组件开关是**跨覆盖安装
+     * 保留**的 —— 之前在这排里选过那两枚的人，机器上剩下五条全被显式写成 DISABLED，
+     * 选中的那条又随包没了，桌面上就没有任何入口（只能从「设置 · 应用」里打开）。
+     * 装完那一刻才是最早的机会，所以 `MY_PACKAGE_REPLACED` 那个广播里也调一次，
+     * 进程每次起来再补一次。
+     */
+    fun ensureSomeEntry(context: Context) {
+        if (ALL.any { enabled(context, it) }) return
+        apply(context, ALL.first())
+    }
+
+    /**
      * 换上某一枚。先开新的再关旧的，理由见文件头。
      *
      * 这一步动的是系统里的组件开关，不是网络，也不是学校的什么数据 ——

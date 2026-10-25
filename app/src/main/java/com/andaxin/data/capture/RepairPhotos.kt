@@ -67,7 +67,12 @@ object RepairPhotos {
         }
     }
 
-    /** 只给界面上那一格缩略图用：按 2 的幂降到够画就行，不转正、不压质量。 */
+    /**
+     * 只给界面上那一格缩略图用：按 2 的幂降到够画就行，不压质量。
+     *
+     * 但 EXIF 转正这一步不能省 —— 上传那一发会转正（`encode` 里走 `turn`），
+     * 预览不转的话，拍完竖着拍的在格子里就是横的，人以为传错了。
+     */
     fun thumb(context: Context, uri: String, edgePx: Int): Bitmap? = runCatching {
         val bytes = context.contentResolver.openInputStream(Uri.parse(uri))?.use { it.readBytes() }
             ?: return null
@@ -75,10 +80,11 @@ object RepairPhotos {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         var sample = 1
         while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= edgePx) sample *= 2
-        BitmapFactory.decodeByteArray(
+        val small = BitmapFactory.decodeByteArray(
             bytes, 0, bytes.size,
             BitmapFactory.Options().apply { inSampleSize = sample },
-        )
+        ) ?: return null
+        turn(small, orientationOf(bytes))
     }.getOrNull()
 
     /** 拿不到 SIZE 列（有的提供方没有）就当没这条闸，交给后面 decode 那一步。 */

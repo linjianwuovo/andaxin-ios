@@ -627,14 +627,14 @@ private fun FieldRow(
         // 照片那一格：格子里只放本机选中的图。选图、删图都不碰网络 ——
         // 传图那几发排在「提交」后面（`CaptureRepairForm.uploadPhotos`），这一格只是把 uri 攒着。
         is Field.Photos -> {
+            var over by remember { mutableStateOf(false) }
             val picked = get(field.key).split(',').map { it.trim() }.filter { it.isNotBlank() }
             val pick = rememberLauncherForActivityResult(
                 ActivityResultContracts.PickMultipleVisualMedia(field.max),
             ) { got ->
-                put(
-                    field.key,
-                    (picked + got.map { it.toString() }).distinct().take(field.max).joinToString(","),
-                )
+                val merged = (picked + got.map { it.toString() }).distinct()
+                over = merged.size > field.max
+                put(field.key, merged.take(field.max).joinToString(","))
             }
             Text(field.label, fontSize = Type.meta, color = ink.muted)
             Spacer(Modifier.height(Gap.xs))
@@ -675,6 +675,17 @@ private fun FieldRow(
                 }
             }
             Spacer(Modifier.height(Gap.xs))
+            // 一次多选超了额度的话，选择器按它的上限给，回来我们只留前 N 张 ——
+            // 不能悄悄丢掉：原来 `.take(max)` 什么都不说，多选的几张无声消失。
+            if (over) {
+                Text(
+                    text = "只留下前 ${field.max} 张，多选的没收下。",
+                    fontSize = Type.micro,
+                    color = ink.muted,
+                    lineHeight = Type.metaLine,
+                    modifier = Modifier.padding(bottom = Gap.xxs),
+                )
+            }
             Text(
                 text = if (picked.size >= field.max) {
                     "已经 ${picked.size} 张，到顶了（学校那一版最多也是 ${field.max} 张）。"
