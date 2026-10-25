@@ -18,7 +18,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        let docs = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
+        // 拿不到 Documents 就退到 Caches、再退到临时目录：
+        // 之前兜底成空串，路径会变成 "/andaxin.preferences_pb"（文件系统根），
+        // 读有 runCatching 兜着看不出来，一写就炸。
+        let docs = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first
+            ?? NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first
+            ?? NSTemporaryDirectory()
         let g = IosAppGraph(documentsPath: docs)
         graph = g
 
