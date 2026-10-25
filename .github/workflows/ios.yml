@@ -45,24 +45,41 @@ jobs:
 
       - name: 模拟器装上、点亮、截屏
         run: |
-          xcrun simctl list devices available | grep iPhone || true
-          UDID=$(xcrun simctl list devices available | grep "iPhone 16 (" | head -1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          echo "UDID=$UDID"
+          # 选机：同型号里运行时最新的那台 iPhone 16。
+          # 之前是 grep "iPhone 16 (" | head -1，抓到的是列表里第一个同名设备——那是个老运行时，
+          # 而 xcodebuild 走的是 OS:26.2 那台（destination 警告里 id:2911FD29…）。
+          # 拿 26.2 SDK 编出来的 app 装进老运行时：install 和 launch 都给好脸色，进程几秒就没了 —— 对得上前两发的现象。
+          JSON=$(xcrun simctl list devices available -j)
+          UDID=$(printf '%s' "$JSON" | jq -r 'to_entries | map(select(.key|startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))) | sort_by(.key) | last | .value | map(select(.name=="iPhone 16" and .isAvailable)) | .[0].udid // empty')
+          RUNTIME=$(printf '%s' "$JSON" | jq -r 'to_entries | map(select(.key|startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))) | sort_by(.key) | last | .key' | sed 's/.*iOS-//')
+          echo "选中：iPhone 16 / iOS $RUNTIME / $UDID"
+          if [ -z "$UDID" ]; then echo "没有可用的 iPhone 16 模拟器，判这步失败"; exit 1; fi
           xcrun simctl boot "$UDID" || true
           APP=$(find build/Build/Products -name 'AndaXin.app' -path '*iphonesimulator*' | head -1)
           xcrun simctl install "$UDID" "$APP"
-          # 85b3dac 那发：launch 给了 PID、图也拍了，可拍出来是 SpringBoard —— 进程五秒内自己没了。
-          # 所以这里把 app 自己的 stdout/stderr 接过来（--console-pty），崩因就在这儿；
-          # timeout 20 到点掐掉，否则成功启动的 app 会让这一步挂死；|| true 是不让 -e 把它算成失败。
-          timeout 20 xcrun simctl launch --console-pty --terminate-running-process "$UDID" com.andaxin.ios | tee launch-console.log || true
+          # macOS runner 没有 GNU timeout（78750fc 那发就是 command not found，launch 根本没跑）。
+          # 改成后台挂 console + sleep + kill：kill 的是 simctl 客户端，不动 app，
+          # 所以第二张图还能顺便验"是不是我这一掐把 app 带走的"。
+          xcrun simctl launch --console-pty --terminate-running-process "$UDID" com.andaxin.ios > launch-console.log 2>&1 &
+          CPID=$!
+          sleep 12
           xcrun simctl io "$UDID" screenshot iosApp/simulator-launch.png || true
-          sleep 8
+          kill "$CPID" 2>/dev/null || true
+          sleep 6
           xcrun simctl io "$UDID" screenshot iosApp/simulator-later.png || true
-          # 崩溃报告落在 runner 用户的 DiagnosticReports；有就把头部几十行打出来（含异常类型和栈顶）
-          find "$HOME/Library/Logs/DiagnosticReports" -name 'AndaXin*' -mmin -10 2>/dev/null | while read -r c; do
-            echo "--- 崩溃报告 $c"; head -60 "$c"
+          # 崩溃报告两处都翻：runner 用户目录，和这台模拟器自己的数据目录
+          for d in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Logs/CrashReporter"; do
+            find "$d" -iname '*AndaXin*' -mmin -20 2>/dev/null | while read -r c; do
+              echo "--- 崩溃报告 $c"; head -80 "$c"
+            done
           done
+          echo "--- 系统日志里 AndaXin 那三十行"
+          xcrun simctl spawn "$UDID" log show --style compact --last 3m --predicate 'process == "AndaXin"' 2>/dev/null | tail -30 || true
           xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i andaxin || echo "launchctl 里已经没有 AndaXin 进程"
+          # 装进去的那份 plist 到底长什么样：xcodebuild 警告说缺启动屏，而仓库这份是有的
+          BUILT="$APP/Info.plist"
+          echo "--- 产物里的 Info.plist 关键键"
+          plutil -p "$BUILT" 2>/dev/null | grep -iE "UILaunchScreen|UISupportedInterfaceOrientations|UIRequiresFullScreen|CFBundleIdentifier|MinimumOSVersion" || echo "读不到 $BUILT"
 
       - name: 无签名真机 ipa（Sideloadly/爱思在 PC 上重签用）
         run: |
