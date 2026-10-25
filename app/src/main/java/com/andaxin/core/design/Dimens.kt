@@ -67,6 +67,8 @@ object Type {
     /** 只有 [tiny] 那一档要用：格子里两行字，行高再按 body 的 21 就撑不开了。 */
     val tinyLine = 12.sp
     val tinier = 8.5.sp
+    /** [tinier] 换行时用这一档行高：块里那行教室要占两三行，按默认行高会把块的下半截撑过头。 */
+    val tinierLine = 10.sp
     val hero = 30.sp
 
     /**

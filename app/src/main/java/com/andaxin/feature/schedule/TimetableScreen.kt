@@ -426,7 +426,11 @@ private fun CourseCell(slot: TimetableSlot, span: Int, now: Boolean, rowH: Dp, s
                 text = shortRoom(slot.room),
                 fontSize = Type.tinier,
                 color = Color.White.copy(alpha = 0.86f),
-                maxLines = 1,
+                // 教室只给一行，而一列才 57dp 上下 ——「博雅A1区 102」这种就被掐成「博雅A1 …」，
+                // 块的下半截却空着一大片。让它按块高换行：两节的块给两行，三节往上给三行。
+                // （行宽不够是列宽定的，改不了；能改的是别浪费块里已有的高度。）
+                maxLines = if (span >= 3) 3 else 2,
+                lineHeight = Type.tinierLine,
                 overflow = TextOverflow.Ellipsis,
             )
         }
