@@ -51,11 +51,18 @@ jobs:
           xcrun simctl boot "$UDID" || true
           APP=$(find build/Build/Products -name 'AndaXin.app' -path '*iphonesimulator*' | head -1)
           xcrun simctl install "$UDID" "$APP"
-          xcrun simctl launch "$UDID" com.andaxin.ios
-          sleep 5
-          # 写到 iosApp/ 下：上传清单里那条路径就是 iosApp/simulator-launch.png，
-          # 落在仓库根目录会被 upload-artifact 静默漏掉（f069f85 那发就是这样少了一张图）
-          xcrun simctl io "$UDID" screenshot iosApp/simulator-launch.png
+          # 85b3dac 那发：launch 给了 PID、图也拍了，可拍出来是 SpringBoard —— 进程五秒内自己没了。
+          # 所以这里把 app 自己的 stdout/stderr 接过来（--console-pty），崩因就在这儿；
+          # timeout 20 到点掐掉，否则成功启动的 app 会让这一步挂死；|| true 是不让 -e 把它算成失败。
+          timeout 20 xcrun simctl launch --console-pty --terminate-running-process "$UDID" com.andaxin.ios | tee launch-console.log || true
+          xcrun simctl io "$UDID" screenshot iosApp/simulator-launch.png || true
+          sleep 8
+          xcrun simctl io "$UDID" screenshot iosApp/simulator-later.png || true
+          # 崩溃报告落在 runner 用户的 DiagnosticReports；有就把头部几十行打出来（含异常类型和栈顶）
+          find "$HOME/Library/Logs/DiagnosticReports" -name 'AndaXin*' -mmin -10 2>/dev/null | while read -r c; do
+            echo "--- 崩溃报告 $c"; head -60 "$c"
+          done
+          xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i andaxin || echo "launchctl 里已经没有 AndaXin 进程"
 
       - name: 无签名真机 ipa（Sideloadly/爱思在 PC 上重签用）
         run: |
@@ -86,6 +93,8 @@ jobs:
           name: ios-artifacts
           path: |
             iosApp/simulator-launch.png
+            iosApp/simulator-later.png
+            launch-console.log
             AndaXin-unsigned.ipa
             shared-framework.zip
           if-no-files-found: warn
