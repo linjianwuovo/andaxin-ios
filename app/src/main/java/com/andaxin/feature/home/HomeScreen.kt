@@ -345,7 +345,8 @@ fun HomeScreen(open: (String) -> Unit = {}, modifier: Modifier = Modifier) {
             ) {
                 listOf("运动" to com.andaxin.shell.Route.SPORT, "查寝" to com.andaxin.shell.Route.DORM,
                     "校园卡" to com.andaxin.shell.Route.CARD, "报修" to com.andaxin.shell.Route.REPAIR,
-                    "AI 课堂" to com.andaxin.shell.Route.AICLASS, "待办" to com.andaxin.shell.Route.AFFAIR)
+                    "AI 课堂" to com.andaxin.shell.Route.AICLASS, "待办" to com.andaxin.shell.Route.AFFAIR,
+                    "第二课堂" to com.andaxin.shell.Route.DEKT)
                     .forEach { (name, at) -> Chip(name, picked = false) { open(at) } }
             }
 

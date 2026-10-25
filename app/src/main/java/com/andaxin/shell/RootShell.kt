@@ -148,6 +148,8 @@ object Route {
     const val AFFAIR_TAB = "affair/tab/{tab}"
     const val AFFAIR_DETAIL = "affair/detail/{id}"
     const val AFFAIR_FORM = "affair/form"
+    /** 第二课堂（dekt 那一族，只读：学分总览 + 我的申报）。 */
+    const val DEKT = "dekt"
     const val AICLASS = "aiclass"
     const val AICLASS_DETAIL = "aiclass/detail/{id}"
     const val AICLASS_SCAN = "aiclass/scan"
@@ -291,6 +293,7 @@ fun RootShell() {
         page(Route.CREDIT_DETAIL, arguments = listOf(idPattern())) { e ->
             CreditDetailScreen(e.arguments?.getString(ID_ARG).orEmpty()) { nav.popBackStack() }
         }
+        page(Route.DEKT) { com.andaxin.feature.modules.SecondClassScreen(onBack = { nav.popBackStack() }) }
         page(Route.LABOR) { LaborListScreen(open = { nav.navigate(it) }, onBack = { nav.popBackStack() }) }
         page(Route.LABOR_DETAIL, arguments = listOf(idPattern())) { e ->
             LaborDetailScreen(e.arguments?.getString(ID_ARG).orEmpty()) { nav.popBackStack() }
